@@ -5,6 +5,7 @@ import (
 	"log"
 
 	client "wamp3go"
+	clientJoin "wamp3go/transport/join"
 
 	"github.com/google/uuid"
 )
@@ -184,10 +185,10 @@ func (dealer *Dealer) setup(
 		"wamp.join",
 		&client.RegisterOptions{},
 		func(request client.CallEvent) client.ReplyEvent {
-			payload := new(client.JoinPayload)
+			payload := new(clientJoin.JoinPayload)
 			e := request.Payload(payload)
 			if e == nil {
-				replyPayload := client.SuccessJoinPayload{uuid.NewString(), "test"}
+				replyPayload := clientJoin.SuccessJoinPayload{uuid.NewString(), "test"}
 				return client.NewReplyEvent(request.ID(), replyPayload)
 			}
 			return client.NewErrorEvent(request.ID(), e)
