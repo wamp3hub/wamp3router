@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	client "wamp3go"
-	clientJoin "wamp3go/transport/join"
+	client "github.com/wamp3hub/wamp3go"
+	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
 )
 
 func GatewayMount(

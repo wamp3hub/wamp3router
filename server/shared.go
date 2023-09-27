@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	client "wamp3go"
+	client "github.com/wamp3hub/wamp3go"
 )
 
 func readJSONBody(requestBody io.ReadCloser, v any) error {

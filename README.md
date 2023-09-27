@@ -17,6 +17,7 @@ that provides two messaging patterns:
 ## Installation
 
 ```bash
+cd ./cli/
 go run .
 ```
 
