@@ -4,17 +4,17 @@ import (
 	"log"
 	"net/http"
 
-	client "wamp3go"
-	"wamp3go/serializer"
-	clientShared "wamp3go/shared"
-	"wamp3go/transport"
+	client "github.com/wamp3hub/wamp3go"
+	"github.com/wamp3hub/wamp3go/serializer"
+	"github.com/wamp3hub/wamp3go/shared"
+	"github.com/wamp3hub/wamp3go/transport"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 func WebsocketMount(
-	newcomers *clientShared.Producer[*client.Peer],
+	newcomers *shared.Producer[*client.Peer],
 ) http.Handler {
 	// Upgrades http request to websocket
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {

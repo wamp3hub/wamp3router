@@ -5,15 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"wamp3go/transport"
-
-	client "wamp3go"
-	clientShared "wamp3go/shared"
-
-	"wamp3router/server"
-	"wamp3router/storage"
 
 	"github.com/google/uuid"
+	client "github.com/wamp3hub/wamp3go"
+	clientShared "github.com/wamp3hub/wamp3go/shared"
+	"github.com/wamp3hub/wamp3go/transport"
+
+	"github.com/wamp3hub/wamp3router/server"
+	"github.com/wamp3hub/wamp3router/storage"
 )
 
 type Newcomers = clientShared.Consumer[*client.Peer]

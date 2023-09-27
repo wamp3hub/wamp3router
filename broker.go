@@ -4,7 +4,7 @@ import (
 	"errors"
 	"log"
 
-	client "wamp3go"
+	client "github.com/wamp3hub/wamp3go"
 
 	"github.com/google/uuid"
 )

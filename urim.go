@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	client "wamp3go"
+	client "github.com/wamp3hub/wamp3go"
 )
 
 var URI_RE, _ = regexp.Compile(`^(\*{1,2}|[_0-9a-z]+)(\.(\*{1,2}|[_0-9a-z]+))*$`)
