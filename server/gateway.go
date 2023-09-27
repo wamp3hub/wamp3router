@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	client "wamp3go"
+	clientJoin "wamp3go/transport/join"
 )
 
 func GatewayMount(
@@ -12,14 +13,14 @@ func GatewayMount(
 ) http.Handler {
 	onJoin := func(request *http.Request) (int, any) {
 		log.Print("[gateway] new join request")
-		requestPayload := client.JoinPayload{}
+		requestPayload := clientJoin.JoinPayload{}
 		e := readJSONBody(request.Body, &requestPayload)
 		if e == nil {
 			callEvent := client.NewCallEvent(&client.CallFeatures{"wamp.join"}, requestPayload)
 			replyEvent := session.Call(callEvent)
 			replyFeatures := replyEvent.Features()
 			if replyFeatures.OK {
-				responsePayload := client.SuccessJoinPayload{}
+				responsePayload := clientJoin.SuccessJoinPayload{}
 				e = replyEvent.Payload(&responsePayload)
 				if e == nil {
 					log.Printf("[gateway] successfull call(wamp.join) (peer.ID=%s)", responsePayload.PeerID)
