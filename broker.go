@@ -55,7 +55,7 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s) %s",
 					features.URI, publisher.ID, subscription.AuthorID, subscription.ID, e,
 				)
-				// TODO catch accept event
+				// TODO acknowledgment
 			}
 		} else {
 			e = errors.New("SubscriberNotFound")

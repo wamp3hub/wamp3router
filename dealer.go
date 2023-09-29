@@ -71,54 +71,67 @@ func (dealer *Dealer) onYield(
 func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
 	route := request.Route()
 	route.CallerID = caller.ID
+
 	features := request.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
 	// TODO select best registration
 	registrationList := dealer.registrations.Match(features.URI)
 	for _, registration := range registrationList {
-		executor, exist := dealer.peers[registration.AuthorID]
-		if exist {
-			route.EndpointID = registration.ID
-			route.ExecutorID = executor.ID
-			e = executor.Transport.Send(request)
-			if e == nil {
-				response, e := executor.PendingReplyEvents.Catch(request.ID(), client.DEFAULT_TIMEOUT)
-				if e == nil {
-					if response.Kind() == client.MK_YIELD {
-						go dealer.onYield(caller, executor, response.ID())
-					}
-				} else {
-					log.Printf(
-						"[dealer] not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-						features.URI, caller.ID, executor.ID, registration.ID, e,
-					)
-					response = client.NewErrorEvent(request.ID(), e)
-				}
-				e = caller.Transport.Send(response)
-				if e == nil {
-					log.Printf(
-						"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-						features.URI, caller.ID, executor.ID, registration.ID,
-					)
-				} else {
-					log.Printf(
-						"[dealer] response not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-						features.URI, caller.ID, executor.ID, registration.ID, e,
-					)
-				}
-				return e
+		executor, exists := dealer.peers[registration.AuthorID]
+		if !exists {
+			log.Printf(
+				"[dealer] peer not found (URI=%s caller.ID=%s registration.ID=%s peer.ID=%s)",
+				features.URI, caller.ID, registration.ID, registration.AuthorID,
+			)
+			continue
+		}
+
+		route.EndpointID = registration.ID
+		route.ExecutorID = executor.ID
+		e = executor.Transport.Send(request)
+		if e == nil {
+			log.Printf(
+				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+				features.URI, caller.ID, registration.AuthorID, registration.ID,
+			)			
+		} else {
+			log.Printf(
+				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, registration.AuthorID, registration.ID, e,
+			)
+			continue
+		}
+
+		response, e := executor.PendingReplyEvents.Catch(request.ID(), client.DEFAULT_TIMEOUT)
+		if e == nil {
+			if response.Kind() == client.MK_YIELD {
+				go dealer.onYield(caller, executor, response.ID())
 			}
 		} else {
-			e = errors.New("PeerNotFound")
+			log.Printf(
+				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, executor.ID, registration.ID, e,
+			)
+			response = client.NewErrorEvent(request.ID(), e)
 		}
-		log.Printf(
-			"[dealer] during invocation (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-			features.URI, caller.ID, registration.AuthorID, registration.ID, e,
-		)
+
+		e = caller.Transport.Send(response)
+		if e == nil {
+			log.Printf(
+				"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+				features.URI, caller.ID, executor.ID, registration.ID,
+			)
+		} else {
+			log.Printf(
+				"[dealer] reply not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, executor.ID, registration.ID, e,
+			)
+		}
+		return nil
 	}
 
-	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	log.Printf("[dealer] procedure or peer not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := client.NewErrorEvent(request.ID(), errors.New("ProcedureNotFound"))
 	e = caller.Transport.Send(response)
 	return e
