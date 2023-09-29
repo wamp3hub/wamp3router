@@ -33,8 +33,8 @@ func WebsocketMount(
 				peerID := uuid.NewString()
 				log.Printf("[websocket] new peer (ID=%s)", peerID)
 				serializer := new(serializer.JSONSerializer)
-				transport := transport.WSTransport{serializer, connection}
-				peer := client.NewPeer(peerID, &transport)
+				transport := transport.WSTransport(serializer, connection)
+				peer := client.NewPeer(peerID, transport)
 				newcomers.Produce(peer)
 			} else {
 				log.Printf("[websocket] %s", e)

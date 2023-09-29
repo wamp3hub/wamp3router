@@ -25,15 +25,15 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 	route := request.Route()
 	route.PublisherID = publisher.ID
 	features := request.Features()
-	log.Printf("publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
+	log.Printf("[broker] publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
 
 	// Acknowledgment
 	response := client.NewAcceptEvent(request.ID())
 	e = publisher.Transport.Send(response)
 	if e == nil {
-		log.Printf("publish acknowledgment sent (peer.ID=%s URI=%s)", publisher.ID, features.URI)
+		log.Printf("[broker] publish acknowledgment sent (peer.ID=%s URI=%s)", publisher.ID, features.URI)
 	} else {
-		log.Printf("publish acknowledgment not sent (peer.ID=%s URI=%s) %s", publisher.ID, features.URI, e)
+		log.Printf("[broker] publish acknowledgment not sent (peer.ID=%s URI=%s) %s", publisher.ID, features.URI, e)
 	}
 
 	// includeSet := NewSet(features.Include)
@@ -52,7 +52,7 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 			e = subscriber.Transport.Send(request)
 			if e == nil {
 				log.Printf(
-					"publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s) %s",
+					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s) %s",
 					features.URI, publisher.ID, subscription.AuthorID, subscription.ID, e,
 				)
 				// TODO catch accept event
@@ -61,7 +61,7 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 			e = errors.New("SubscriberNotFound")
 		}
 		log.Printf(
-			"publication not sent (URI=%s publisher.ID=%s subscriber.ID=%s) %s",
+			"[broker] publication not sent (URI=%s publisher.ID=%s subscriber.ID=%s) %s",
 			features.URI, publisher.ID, subscription.AuthorID, e,
 		)
 	}

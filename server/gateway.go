@@ -20,7 +20,7 @@ func GatewayMount(
 			replyEvent := session.Call(callEvent)
 			replyFeatures := replyEvent.Features()
 			if replyFeatures.OK {
-				responsePayload := clientJoin.SuccessJoinPayload{}
+				responsePayload := clientJoin.JoinSuccessPayload{}
 				e = replyEvent.Payload(&responsePayload)
 				if e == nil {
 					log.Printf("[gateway] successfull call(wamp.join) (peer.ID=%s)", responsePayload.PeerID)
