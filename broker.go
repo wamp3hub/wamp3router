@@ -21,9 +21,6 @@ func newBroker(storage Storage) *Broker {
 }
 
 func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEvent) (e error) {
-	acceptEvent := client.NewAcceptEvent(request.ID())
-	publisher.Transport.Send(acceptEvent)
-
 	route := request.Route()
 	route.PublisherID = publisher.ID
 	features := request.Features()
@@ -42,10 +39,8 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 		subscriber, exist := broker.peers[subscription.AuthorID]
 		if exist {
 			route.SubscriberID = subscriber.ID
-			acceptEventPromise := subscriber.PendingAcceptEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
-			subscriber.Transport.Send(request)
-			_, done := <-acceptEventPromise
-			if done {
+			e := subscriber.Send(request)
+			if e == nil {
 				log.Printf(
 					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
 					features.URI, publisher.ID, subscription.AuthorID, subscription.ID,

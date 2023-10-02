@@ -35,27 +35,17 @@ func (dealer *Dealer) onYield(
 	nextEventPromise := caller.PendingNextEvents.New(eventID, client.DEFAULT_GENERATOR_LIFETIME)
 	nextEvent, done := <-nextEventPromise
 	if done {
-		acceptEvent := client.NewAcceptEvent(nextEvent.ID())
-		caller.Transport.Send(acceptEvent)
-
-		acceptEventPromise := executor.PendingAcceptEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
 		replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
-		executor.Transport.Send(nextEvent)
-		_, done = <-acceptEventPromise
-		if done {
+		e := executor.Send(nextEvent)
+		if e == nil {
 			yieldEvent, done := <-replyEventPromise
 			if done {
-				acceptEvent = client.NewAcceptEvent(yieldEvent.ID())
-				executor.Transport.Send(acceptEvent)
-
 				if yieldEvent.Kind() == client.MK_YIELD {
 					go dealer.onYield(caller, executor, yieldEvent.ID())
 				}
 
-				acceptEventPromise := caller.PendingAcceptEvents.New(yieldEvent.ID(), client.DEFAULT_TIMEOUT)
-				caller.Transport.Send(yieldEvent)
-				_, done = <-acceptEventPromise
-				if done {
+				e = caller.Send(yieldEvent)
+				if e == nil {
 					log.Printf(
 						"[dealer] generator success (caller.ID=%s executor.ID=%s yield.ID=%s)",
 						caller.ID, executor.ID, yieldEvent.ID(),
@@ -67,9 +57,6 @@ func (dealer *Dealer) onYield(
 }
 
 func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
-	acceptEvent := client.NewAcceptEvent(request.ID())
-	caller.Transport.Send(acceptEvent)
-
 	route := request.Route()
 	route.CallerID = caller.ID
 
@@ -91,11 +78,9 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		acceptEventPromise := executor.PendingAcceptEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
 		replyEventPromise := executor.PendingReplyEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
-		executor.Transport.Send(request)
-		_, done := <-acceptEventPromise
-		if done {
+		e = executor.Send(request)
+		if e == nil {
 			log.Printf(
 				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
 				features.URI, caller.ID, registration.AuthorID, registration.ID,
@@ -113,9 +98,6 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 			if response.Kind() == client.MK_YIELD {
 				go dealer.onYield(caller, executor, response.ID())
 			}
-
-			acceptEvent := client.NewAcceptEvent(response.ID())
-			executor.Transport.Send(acceptEvent)
 		} else {
 			log.Printf(
 				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
@@ -124,10 +106,8 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 			response = client.NewErrorEvent(request.ID(), e)
 		}
 
-		acceptEventPromise = caller.PendingAcceptEvents.New(response.ID(), client.DEFAULT_TIMEOUT)
-		caller.Transport.Send(response)
-		_, done = <-acceptEventPromise
-		if done {
+		e = caller.Send(response)
+		if e == nil {
 			log.Printf(
 				"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
 				features.URI, caller.ID, executor.ID, registration.ID,
@@ -143,8 +123,7 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 
 	log.Printf("[dealer] procedure or peer not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := client.NewErrorEvent(request.ID(), errors.New("ProcedureNotFound"))
-	caller.PendingAcceptEvents.New(response.ID(), client.DEFAULT_TIMEOUT)
-	caller.Transport.Send(response)
+	caller.Send(response)
 	return nil
 }
 
