@@ -3,7 +3,6 @@ package wamp3router
 import (
 	"errors"
 	"log"
-	"sync"
 
 	client "github.com/wamp3hub/wamp3go"
 	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
@@ -23,51 +22,43 @@ func newDealer(storage Storage) *Dealer {
 	}
 }
 
-func (dealer *Dealer) processYield(
-	wg *sync.WaitGroup,
+func (dealer *Dealer) onYield(
 	caller *client.Peer,
 	executor *client.Peer,
-	event client.ReplyEvent,
-) {
-	log.Printf(
-		"[dealer] await next event (caller.ID=%s executor.ID=%s yield.ID=%s)",
-		caller.ID, executor.ID, event.ID(),
-	)
-
-	nextEventPromise := caller.PendingNextEvents.New(event.ID(), client.DEFAULT_GENERATOR_LIFETIME)
-	wg.Done()
-	nextEvent, done := <-nextEventPromise
-	if done {
-		replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
-		e := executor.Send(nextEvent)
+	yieldEvent client.ReplyEvent,
+) (e error) {
+	for yieldEvent.Kind() == client.MK_YIELD {
+		nextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), client.DEFAULT_GENERATOR_LIFETIME)
+		e = caller.Send(yieldEvent)
 		if e == nil {
-			yieldEvent, done := <-replyEventPromise
-			if done {
-				if yieldEvent.Kind() == client.MK_YIELD {
-					dealer.onYield(caller, executor, yieldEvent)
-				}
+			log.Printf(
+				"[dealer] generator yield (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+				caller.ID, executor.ID, yieldEvent.ID(),
+			)
+		}
 
-				e = caller.Send(yieldEvent)
-				if e == nil {
+		nextEvent, done := <-nextEventPromise
+		if done {
+			log.Printf(
+				"[dealer] generator next step (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
+				caller.ID, executor.ID, nextEvent.ID(),
+			)
+
+			replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
+			e := executor.Send(nextEvent)
+			if e == nil {
+				yieldEvent, done = <-replyEventPromise
+				if done {
 					log.Printf(
-						"[dealer] generator success (caller.ID=%s executor.ID=%s yield.ID=%s)",
+						"[dealer] generator respond (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
 						caller.ID, executor.ID, yieldEvent.ID(),
 					)
 				}
 			}
 		}
 	}
-}
 
-func (dealer *Dealer) onYield(
-	caller *client.Peer,
-	executor *client.Peer,
-	event client.ReplyEvent,
-) {
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go dealer.processYield(wg, caller, executor, event)
-	wg.Wait()
+	return e
 }
 
 func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
@@ -108,16 +99,14 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 		}
 
 		response, done := <-replyEventPromise
-		if done {
-			if response.Kind() == client.MK_YIELD {
-				dealer.onYield(caller, executor, response)
-			}
-		} else {
+		if !done {
 			log.Printf(
 				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
 				features.URI, caller.ID, executor.ID, registration.ID, e,
 			)
 			response = client.NewErrorEvent(request.ID(), e)
+		} else if response.Kind() == client.MK_YIELD {
+			return dealer.onYield(caller, executor, response)
 		}
 
 		e = caller.Send(response)
@@ -135,10 +124,10 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 		return nil
 	}
 
-	log.Printf("[dealer] procedure or peer not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := client.NewErrorEvent(request.ID(), errors.New("ProcedureNotFound"))
-	caller.Send(response)
-	return nil
+	e = caller.Send(response)
+	return e
 }
 
 func (dealer *Dealer) onLeave(peer *client.Peer) {

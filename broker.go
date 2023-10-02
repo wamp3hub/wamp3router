@@ -34,22 +34,24 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 			continue
 		}
 
-		// TODO clone request
-		route.EndpointID = subscription.ID
 		subscriber, exist := broker.peers[subscription.AuthorID]
-		if exist {
-			route.SubscriberID = subscriber.ID
-			e := subscriber.Send(request)
-			if e == nil {
-				log.Printf(
-					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
-					features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
-				)
-			}
-		} else {
+		if !exist {
 			log.Printf(
 				"[broker] subscriber not found (URI=%s publisher.ID=%s subscriber.ID=%s)",
 				features.URI, publisher.ID, subscription.AuthorID,
+			)
+			continue
+		}
+
+		// TODO clone request
+		route.EndpointID = subscription.ID
+		route.SubscriberID = subscriber.ID
+
+		e := subscriber.Send(request)
+		if e == nil {
+			log.Printf(
+				"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
+				features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
 			)
 		}
 	}
