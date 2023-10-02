@@ -1,7 +1,6 @@
 package wamp3router
 
 import (
-	"errors"
 	"log"
 
 	client "github.com/wamp3hub/wamp3go"
@@ -22,19 +21,13 @@ func newBroker(storage Storage) *Broker {
 }
 
 func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEvent) (e error) {
+	acceptEvent := client.NewAcceptEvent(request.ID())
+	publisher.Transport.Send(acceptEvent)
+
 	route := request.Route()
 	route.PublisherID = publisher.ID
 	features := request.Features()
 	log.Printf("[broker] publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
-
-	// Acknowledgment
-	response := client.NewAcceptEvent(request.ID())
-	e = publisher.Transport.Send(response)
-	if e == nil {
-		log.Printf("[broker] publish acknowledgment sent (peer.ID=%s URI=%s)", publisher.ID, features.URI)
-	} else {
-		log.Printf("[broker] publish acknowledgment not sent (peer.ID=%s URI=%s) %s", publisher.ID, features.URI, e)
-	}
 
 	// includeSet := NewSet(features.Include)
 	excludeSet := NewSet(features.Exclude)
@@ -49,21 +42,21 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 		subscriber, exist := broker.peers[subscription.AuthorID]
 		if exist {
 			route.SubscriberID = subscriber.ID
-			e = subscriber.Transport.Send(request)
-			if e == nil {
+			acceptEventPromise := subscriber.PendingAcceptEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
+			subscriber.Transport.Send(request)
+			_, done := <-acceptEventPromise
+			if done {
 				log.Printf(
-					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s) %s",
-					features.URI, publisher.ID, subscription.AuthorID, subscription.ID, e,
+					"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
+					features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
 				)
-				// TODO acknowledgment
 			}
 		} else {
-			e = errors.New("SubscriberNotFound")
+			log.Printf(
+				"[broker] subscriber not found (URI=%s publisher.ID=%s subscriber.ID=%s)",
+				features.URI, publisher.ID, subscription.AuthorID,
+			)
 		}
-		log.Printf(
-			"[broker] publication not sent (URI=%s publisher.ID=%s subscriber.ID=%s) %s",
-			features.URI, publisher.ID, subscription.AuthorID, e,
-		)
 	}
 
 	return nil
