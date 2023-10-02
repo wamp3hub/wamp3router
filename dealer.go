@@ -3,6 +3,7 @@ package wamp3router
 import (
 	"errors"
 	"log"
+	"sync"
 
 	client "github.com/wamp3hub/wamp3go"
 	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
@@ -22,17 +23,19 @@ func newDealer(storage Storage) *Dealer {
 	}
 }
 
-func (dealer *Dealer) onYield(
+func (dealer *Dealer) processYield(
+	wg *sync.WaitGroup,
 	caller *client.Peer,
 	executor *client.Peer,
-	eventID string,
+	event client.ReplyEvent,
 ) {
 	log.Printf(
 		"[dealer] await next event (caller.ID=%s executor.ID=%s yield.ID=%s)",
-		caller.ID, executor.ID, eventID,
+		caller.ID, executor.ID, event.ID(),
 	)
 
-	nextEventPromise := caller.PendingNextEvents.New(eventID, client.DEFAULT_GENERATOR_LIFETIME)
+	nextEventPromise := caller.PendingNextEvents.New(event.ID(), client.DEFAULT_GENERATOR_LIFETIME)
+	wg.Done()
 	nextEvent, done := <-nextEventPromise
 	if done {
 		replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
@@ -41,7 +44,7 @@ func (dealer *Dealer) onYield(
 			yieldEvent, done := <-replyEventPromise
 			if done {
 				if yieldEvent.Kind() == client.MK_YIELD {
-					go dealer.onYield(caller, executor, yieldEvent.ID())
+					dealer.onYield(caller, executor, yieldEvent)
 				}
 
 				e = caller.Send(yieldEvent)
@@ -54,6 +57,17 @@ func (dealer *Dealer) onYield(
 			}
 		}
 	}
+}
+
+func (dealer *Dealer) onYield(
+	caller *client.Peer,
+	executor *client.Peer,
+	event client.ReplyEvent,
+) {
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+	go dealer.processYield(wg, caller, executor, event)
+	wg.Wait()
 }
 
 func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
@@ -96,7 +110,7 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 		response, done := <-replyEventPromise
 		if done {
 			if response.Kind() == client.MK_YIELD {
-				go dealer.onYield(caller, executor, response.ID())
+				dealer.onYield(caller, executor, response)
 			}
 		} else {
 			log.Printf(
