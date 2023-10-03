@@ -1,7 +1,6 @@
 package wamp3router
 
 import (
-	"errors"
 	"log"
 
 	client "github.com/wamp3hub/wamp3go"
@@ -25,16 +24,7 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 	route := request.Route()
 	route.PublisherID = publisher.ID
 	features := request.Features()
-	log.Printf("publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
-
-	// Acknowledgment
-	response := client.NewAcceptEvent(request.ID())
-	e = publisher.Transport.Send(response)
-	if e == nil {
-		log.Printf("publish acknowledgment sent (peer.ID=%s URI=%s)", publisher.ID, features.URI)
-	} else {
-		log.Printf("publish acknowledgment not sent (peer.ID=%s URI=%s) %s", publisher.ID, features.URI, e)
-	}
+	log.Printf("[broker] publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
 
 	// includeSet := NewSet(features.Include)
 	excludeSet := NewSet(features.Exclude)
@@ -44,26 +34,26 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 			continue
 		}
 
+		subscriber, exist := broker.peers[subscription.AuthorID]
+		if !exist {
+			log.Printf(
+				"[broker] subscriber not found (URI=%s publisher.ID=%s subscriber.ID=%s)",
+				features.URI, publisher.ID, subscription.AuthorID,
+			)
+			continue
+		}
+
 		// TODO clone request
 		route.EndpointID = subscription.ID
-		subscriber, exist := broker.peers[subscription.AuthorID]
-		if exist {
-			route.SubscriberID = subscriber.ID
-			e = subscriber.Transport.Send(request)
-			if e == nil {
-				log.Printf(
-					"publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s) %s",
-					features.URI, publisher.ID, subscription.AuthorID, subscription.ID, e,
-				)
-				// TODO catch accept event
-			}
-		} else {
-			e = errors.New("SubscriberNotFound")
+		route.SubscriberID = subscriber.ID
+
+		e := subscriber.Send(request)
+		if e == nil {
+			log.Printf(
+				"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
+				features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
+			)
 		}
-		log.Printf(
-			"publication not sent (URI=%s publisher.ID=%s subscriber.ID=%s) %s",
-			features.URI, publisher.ID, subscription.AuthorID, e,
-		)
 	}
 
 	return nil

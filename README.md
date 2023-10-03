@@ -17,6 +17,7 @@ that provides two messaging patterns:
 ## Installation
 
 ```bash
+git clone git@github.com:wamp3hub/wamp3router.git
 cd ./cli/
 go run .
 ```

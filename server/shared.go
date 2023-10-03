@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	client "github.com/wamp3hub/wamp3go"
+	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
 )
 
 func readJSONBody(requestBody io.ReadCloser, v any) error {
@@ -24,7 +24,7 @@ func writeJSONBody(
 ) error {
 	e, isError := payload.(error)
 	if isError {
-		payload = client.ErrorPayload{e.Error()}
+		payload = clientJoin.JoinErrorPayload{e.Error()}
 	}
 	responseBodyBytes, e := json.Marshal(payload)
 	if e == nil {

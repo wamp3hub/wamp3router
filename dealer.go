@@ -22,55 +22,111 @@ func newDealer(storage Storage) *Dealer {
 	}
 }
 
+func (dealer *Dealer) onYield(
+	caller *client.Peer,
+	executor *client.Peer,
+	yieldEvent client.ReplyEvent,
+) (e error) {
+	for yieldEvent.Kind() == client.MK_YIELD {
+		nextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), client.DEFAULT_GENERATOR_LIFETIME)
+		e = caller.Send(yieldEvent)
+		if e == nil {
+			log.Printf(
+				"[dealer] generator yield (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+				caller.ID, executor.ID, yieldEvent.ID(),
+			)
+		}
+
+		nextEvent, done := <-nextEventPromise
+		if done {
+			log.Printf(
+				"[dealer] generator next step (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
+				caller.ID, executor.ID, nextEvent.ID(),
+			)
+
+			replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
+			e := executor.Send(nextEvent)
+			if e == nil {
+				yieldEvent, done = <-replyEventPromise
+				if done {
+					log.Printf(
+						"[dealer] generator respond (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+						caller.ID, executor.ID, yieldEvent.ID(),
+					)
+				}
+			}
+		}
+	}
+
+	return e
+}
+
 func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
 	route := request.Route()
 	route.CallerID = caller.ID
+
 	features := request.Features()
-	log.Printf("call (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
 	// TODO select best registration
 	registrationList := dealer.registrations.Match(features.URI)
 	for _, registration := range registrationList {
-		executor, exist := dealer.peers[registration.AuthorID]
-		if exist {
-			route.EndpointID = registration.ID
-			route.ExecutorID = executor.ID
-			e = executor.Transport.Send(request)
-			if e == nil {
-				response, e := executor.PendingReplyEvents.Catch(request.ID(), client.DEFAULT_TIMEOUT)
-				if e != nil {
-					log.Printf(
-						"not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-						features.URI, caller.ID, executor.ID, registration.ID, e,
-					)
-					response = client.NewErrorEvent(request.ID(), e)
-				}
-				e = caller.Transport.Send(response)
-				if e == nil {
-					log.Printf(
-						"invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-						features.URI, caller.ID, executor.ID, registration.ID,
-					)
-				} else {
-					log.Printf(
-						"response not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-						features.URI, caller.ID, executor.ID, registration.ID, e,
-					)
-				}
-				return e
-			}
-		} else {
-			e = errors.New("PeerNotFound")
+		executor, exists := dealer.peers[registration.AuthorID]
+		if !exists {
+			log.Printf(
+				"[dealer] peer not found (URI=%s caller.ID=%s registration.ID=%s peer.ID=%s)",
+				features.URI, caller.ID, registration.ID, registration.AuthorID,
+			)
+			continue
 		}
-		log.Printf(
-			"during invocation (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-			features.URI, caller.ID, registration.AuthorID, registration.ID, e,
-		)
+
+		route.EndpointID = registration.ID
+		route.ExecutorID = executor.ID
+
+		replyEventPromise := executor.PendingReplyEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
+		e = executor.Send(request)
+		if e == nil {
+			log.Printf(
+				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+				features.URI, caller.ID, registration.AuthorID, registration.ID,
+			)
+		} else {
+			log.Printf(
+				"[dealer] executor not accepted request (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, registration.AuthorID, registration.ID, e,
+			)
+			continue
+		}
+
+		response, done := <-replyEventPromise
+		if !done {
+			log.Printf(
+				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, executor.ID, registration.ID, e,
+			)
+			response = client.NewErrorEvent(request.ID(), e)
+		} else if response.Kind() == client.MK_YIELD {
+			return dealer.onYield(caller, executor, response)
+		}
+
+		e = caller.Send(response)
+		if e == nil {
+			log.Printf(
+				"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+				features.URI, caller.ID, executor.ID, registration.ID,
+			)
+		} else {
+			log.Printf(
+				"[dealer] reply not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				features.URI, caller.ID, executor.ID, registration.ID, e,
+			)
+		}
+		return nil
 	}
 
-	log.Printf("procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := client.NewErrorEvent(request.ID(), errors.New("ProcedureNotFound"))
-	e = caller.Transport.Send(response)
+	e = caller.Send(response)
 	return e
 }
 
@@ -188,7 +244,7 @@ func (dealer *Dealer) setup(
 			payload := new(clientJoin.JoinPayload)
 			e := request.Payload(payload)
 			if e == nil {
-				replyPayload := clientJoin.SuccessJoinPayload{uuid.NewString(), "test"}
+				replyPayload := clientJoin.JoinSuccessPayload{uuid.NewString(), "test"}
 				return client.NewReplyEvent(request.ID(), replyPayload)
 			}
 			return client.NewErrorEvent(request.ID(), e)
