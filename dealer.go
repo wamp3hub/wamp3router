@@ -5,7 +5,6 @@ import (
 	"log"
 
 	client "github.com/wamp3hub/wamp3go"
-	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
 
 	"github.com/google/uuid"
 )
@@ -15,7 +14,7 @@ type Dealer struct {
 	peers         map[string]*client.Peer
 }
 
-func newDealer(storage Storage) *Dealer {
+func NewDealer(storage Storage) *Dealer {
 	return &Dealer{
 		NewURIM[*client.RegisterOptions](storage),
 		make(map[string]*client.Peer),
@@ -145,7 +144,7 @@ func (dealer *Dealer) onJoin(peer *client.Peer) {
 	)
 }
 
-func (dealer *Dealer) serve(newcomers *Newcomers) {
+func (dealer *Dealer) Serve(newcomers *Newcomers) {
 	log.Printf("[dealer] up...")
 	newcomers.Consume(
 		dealer.onJoin,
@@ -153,7 +152,7 @@ func (dealer *Dealer) serve(newcomers *Newcomers) {
 	)
 }
 
-func (dealer *Dealer) setup(
+func (dealer *Dealer) Setup(
 	session *client.Session,
 	broker *Broker,
 ) {
@@ -232,20 +231,6 @@ func (dealer *Dealer) setup(
 				if e == nil {
 					return client.NewReplyEvent(request.ID(), true)
 				}
-			}
-			return client.NewErrorEvent(request.ID(), e)
-		},
-	)
-
-	mount(
-		"wamp.join",
-		&client.RegisterOptions{},
-		func(request client.CallEvent) client.ReplyEvent {
-			payload := new(clientJoin.JoinPayload)
-			e := request.Payload(payload)
-			if e == nil {
-				replyPayload := clientJoin.JoinSuccessPayload{uuid.NewString(), "test"}
-				return client.NewReplyEvent(request.ID(), replyPayload)
 			}
 			return client.NewErrorEvent(request.ID(), e)
 		},

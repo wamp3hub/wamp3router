@@ -4,38 +4,41 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/gorilla/websocket"
+
 	client "github.com/wamp3hub/wamp3go"
 	"github.com/wamp3hub/wamp3go/serializer"
 	"github.com/wamp3hub/wamp3go/shared"
 	"github.com/wamp3hub/wamp3go/transport"
 
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	service "github.com/wamp3hub/wamp3router/service"
 )
 
 func WebsocketMount(
+	interviewer *service.Interviewer,
 	newcomers *shared.Producer[*client.Peer],
 ) http.Handler {
-	// Upgrades http request to websocket
+	websocketUpgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	// creates websocket connection
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[websocket] new upgrade request (ip=%s)", r.RemoteAddr)
-		// e := verifyToken()
-		e := error(nil)
+		query := r.URL.Query()
+		token := query.Get("token")
+		claims, e := interviewer.Decode(token)
 		if e == nil {
-			log.Printf("[websocket] token found")
-			websocketUpgrader := websocket.Upgrader{
-				CheckOrigin: func(r *http.Request) bool {
-					return true
-				},
-			}
+			// serializerCode := query.Get("serializer")
+			__serializer := new(serializer.JSONSerializer)
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
-				peerID := uuid.NewString()
-				log.Printf("[websocket] new peer (ID=%s)", peerID)
-				serializer := new(serializer.JSONSerializer)
-				transport := transport.WSTransport(serializer, connection)
-				peer := client.NewPeer(peerID, transport)
+				__transport := transport.WSTransport(__serializer, connection)
+				peer := client.NewPeer(claims.Subject, __transport)
 				newcomers.Produce(peer)
+				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
 			} else {
 				log.Printf("[websocket] %s", e)
 			}
