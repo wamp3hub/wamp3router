@@ -13,7 +13,7 @@ type Broker struct {
 	peers         map[string]*client.Peer
 }
 
-func newBroker(storage Storage) *Broker {
+func NewBroker(storage Storage) *Broker {
 	return &Broker{
 		NewURIM[*client.SubscribeOptions](storage),
 		make(map[string]*client.Peer),
@@ -75,7 +75,7 @@ func (broker *Broker) onJoin(peer *client.Peer) {
 
 }
 
-func (broker *Broker) serve(newcomers *Newcomers) {
+func (broker *Broker) Serve(newcomers *Newcomers) {
 	log.Printf("[broker] up...")
 	newcomers.Consume(
 		broker.onJoin,
@@ -83,7 +83,7 @@ func (broker *Broker) serve(newcomers *Newcomers) {
 	)
 }
 
-func (broker *Broker) setup(
+func (broker *Broker) Setup(
 	session *client.Session,
 	dealer *Dealer,
 ) {

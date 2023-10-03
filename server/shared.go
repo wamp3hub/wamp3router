@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	clientJoin "github.com/wamp3hub/wamp3go/transport/join"
+	interview "github.com/wamp3hub/wamp3go/transport/interview"
 )
 
 func readJSONBody(requestBody io.ReadCloser, v any) error {
@@ -24,7 +24,7 @@ func writeJSONBody(
 ) error {
 	e, isError := payload.(error)
 	if isError {
-		payload = clientJoin.JoinErrorPayload{e.Error()}
+		payload = interview.ErrorPayload{e.Error()}
 	}
 	responseBodyBytes, e := json.Marshal(payload)
 	if e == nil {
@@ -44,18 +44,3 @@ func jsonEndpoint(
 		writeJSONBody(w, statusCode, payload)
 	}
 }
-
-// func verifyToken(v string) error {
-// 	queryMap := r.URL.Query()
-// 	tokenList := queryMap["token"]
-// 	if len(tokenList) > 0 {
-// 		token := tokenList[0]
-// 		if len(token) > 0 {
-// 			return nil
-// 		} else {
-// 			return errors.New("AuthenticationError")
-// 		}
-// 	} else {
-// 		return errors.New("TokenRequired")
-// 	}
-// }
