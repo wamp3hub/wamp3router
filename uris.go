@@ -19,14 +19,14 @@ func (segment *URISegment[T]) Get(path []string) URISegmentList[T] {
 
 	key := path[0]
 
-	child, exist := segment.Children[key]
-	if exist {
+	child, found := segment.Children[key]
+	if found {
 		sub := child.Get(path[1:])
 		result = append(result, sub...)
 	}
 
-	child, exist = segment.Children[WILD_CARD_SYMBOL]
-	if exist {
+	child, found = segment.Children[WILD_CARD_SYMBOL]
+	if found {
 		sub := child.Get(path[1:])
 		result = append(result, sub...)
 	}
@@ -41,8 +41,8 @@ func (segment *URISegment[T]) GetSert(path []string) *URISegment[T] {
 
 	key := path[0]
 
-	child, exist := segment.Children[key]
-	if !exist {
+	child, found := segment.Children[key]
+	if !found {
 		child = &URISegment[T]{
 			Parent:   segment,
 			Children: make(map[string]*URISegment[T]),
