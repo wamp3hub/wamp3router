@@ -35,9 +35,8 @@ func (interviewer *Interviewer) GenerateClaims(credentials any) (*jwt.Registered
 	log.Printf("[interviewer] credentials=%s", credentials)
 	callEvent := client.NewCallEvent(&client.CallFeatures{"wamp.authenticate"}, credentials)
 	replyEvent := interviewer.session.Call(callEvent)
-	replyFeatures := replyEvent.Features()
-	if !replyFeatures.OK {
-		e := client.ExtractError(replyEvent)
+	e := replyEvent.Error()
+	if e != nil {
 		if e.Error() != "ProcedureNotFound" {
 			return nil, e
 		}

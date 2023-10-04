@@ -43,10 +43,10 @@ func (dealer *Dealer) onYield(
 				caller.ID, executor.ID, nextEvent.ID(),
 			)
 
-			replyEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
+			yieldEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
 			e := executor.Send(nextEvent)
 			if e == nil {
-				yieldEvent, done = <-replyEventPromise
+				yieldEvent, done = <-yieldEventPromise
 				if done {
 					log.Printf(
 						"[dealer] generator respond (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
@@ -103,7 +103,7 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
 				features.URI, caller.ID, executor.ID, registration.ID, e,
 			)
-			response = client.NewErrorEvent(request.ID(), e)
+			response = client.NewErrorEvent(request, e)
 		} else if response.Kind() == client.MK_YIELD {
 			return dealer.onYield(caller, executor, response)
 		}
@@ -124,7 +124,7 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 	}
 
 	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
-	response := client.NewErrorEvent(request.ID(), errors.New("ProcedureNotFound"))
+	response := client.NewErrorEvent(request, errors.New("ProcedureNotFound"))
 	e = caller.Send(response)
 	return e
 }
@@ -177,10 +177,10 @@ func (dealer *Dealer) Setup(
 				registration := client.Registration{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = dealer.registrations.Add(&registration)
 				if e == nil {
-					return client.NewReplyEvent(request.ID(), registration)
+					return client.NewReplyEvent(request, registration)
 				}
 			}
-			return client.NewErrorEvent(request.ID(), e)
+			return client.NewErrorEvent(request, e)
 		},
 	)
 
@@ -194,10 +194,10 @@ func (dealer *Dealer) Setup(
 			if e == nil {
 				e = dealer.registrations.DeleteByAuthor(route.CallerID, payload.ID)
 				if e == nil {
-					return client.NewReplyEvent(request.ID(), true)
+					return client.NewReplyEvent(request, true)
 				}
 			}
-			return client.NewErrorEvent(request.ID(), e)
+			return client.NewErrorEvent(request, e)
 		},
 	)
 
@@ -212,10 +212,10 @@ func (dealer *Dealer) Setup(
 				subscription := client.Subscription{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = broker.subscriptions.Add(&subscription)
 				if e == nil {
-					return client.NewReplyEvent(request.ID(), subscription)
+					return client.NewReplyEvent(request, subscription)
 				}
 			}
-			return client.NewErrorEvent(request.ID(), e)
+			return client.NewErrorEvent(request, e)
 		},
 	)
 
@@ -229,10 +229,10 @@ func (dealer *Dealer) Setup(
 			if e == nil {
 				e = broker.subscriptions.DeleteByAuthor(route.CallerID, payload.ID)
 				if e == nil {
-					return client.NewReplyEvent(request.ID(), true)
+					return client.NewReplyEvent(request, true)
 				}
 			}
-			return client.NewErrorEvent(request.ID(), e)
+			return client.NewErrorEvent(request, e)
 		},
 	)
 }
