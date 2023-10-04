@@ -5,7 +5,7 @@ import (
 
 	client "github.com/wamp3hub/wamp3go"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 type Broker struct {
@@ -72,7 +72,6 @@ func (broker *Broker) onJoin(peer *client.Peer) {
 		func(event client.PublishEvent) { broker.onPublish(peer, event) },
 		func() { broker.onLeave(peer) },
 	)
-
 }
 
 func (broker *Broker) Serve(newcomers *Newcomers) {
@@ -92,7 +91,7 @@ func (broker *Broker) Setup(
 		options *client.SubscribeOptions,
 		procedure func(request client.PublishEvent),
 	) {
-		subscription := client.Subscription{uuid.NewString(), uri, session.ID(), options}
+		subscription := client.Subscription{xid.New().String(), uri, session.ID(), options}
 		broker.subscriptions.Add(&subscription)
 		session.Subscriptions[subscription.ID] = procedure
 	}

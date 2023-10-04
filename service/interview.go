@@ -10,7 +10,7 @@ import (
 	client "github.com/wamp3hub/wamp3go"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 type Interviewer struct {
@@ -28,16 +28,15 @@ func NewInterviewer(session *client.Session) (*Interviewer, error) {
 }
 
 func (interviewer *Interviewer) generatePeerID() string {
-	return interviewer.session.ID() + "-" + uuid.NewString()
+	return interviewer.session.ID() + "-" + xid.New().String()
 }
 
 func (interviewer *Interviewer) GenerateClaims(credentials any) (*jwt.RegisteredClaims, error) {
 	log.Printf("[interviewer] credentials=%s", credentials)
 	callEvent := client.NewCallEvent(&client.CallFeatures{"wamp.authenticate"}, credentials)
 	replyEvent := interviewer.session.Call(callEvent)
-	replyFeatures := replyEvent.Features()
-	if !replyFeatures.OK {
-		e := client.ExtractError(replyEvent)
+	e := replyEvent.Error()
+	if e != nil {
 		if e.Error() != "ProcedureNotFound" {
 			return nil, e
 		}
