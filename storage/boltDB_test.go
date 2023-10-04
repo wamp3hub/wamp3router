@@ -3,11 +3,11 @@ package storage
 import (
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 func TestHappyPathBoltDB(t *testing.T) {
-	path := "/tmp/" + uuid.NewString() + ".db"
+	path := "/tmp/" + xid.New().String() + ".db"
 	storage, e := NewBoltDBStorage(path)
 	if e != nil {
 		t.Fatal(e)

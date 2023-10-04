@@ -10,7 +10,7 @@ import (
 	client "github.com/wamp3hub/wamp3go"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 type Interviewer struct {
@@ -28,7 +28,7 @@ func NewInterviewer(session *client.Session) (*Interviewer, error) {
 }
 
 func (interviewer *Interviewer) generatePeerID() string {
-	return interviewer.session.ID() + "-" + uuid.NewString()
+	return interviewer.session.ID() + "-" + xid.New().String()
 }
 
 func (interviewer *Interviewer) GenerateClaims(credentials any) (*jwt.RegisteredClaims, error) {

@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/google/uuid"
 	client "github.com/wamp3hub/wamp3go"
 	clientShared "github.com/wamp3hub/wamp3go/shared"
 	"github.com/wamp3hub/wamp3go/transport"
+
+	"github.com/rs/xid"
 
 	router "github.com/wamp3hub/wamp3router"
 	"github.com/wamp3hub/wamp3router/server"
@@ -30,7 +31,7 @@ func Serve(
 	storage, e := storage.NewBoltDBStorage(storagePath)
 	defer storage.Destroy()
 	if e == nil {
-		peerID := uuid.NewString()
+		peerID := xid.New().String()
 		alphaTransport, betaTransport := transport.NewDuplexLocalTransport()
 		alphaPeer := client.NewPeer(peerID, alphaTransport)
 		betaPeer := client.NewPeer(peerID, betaTransport)

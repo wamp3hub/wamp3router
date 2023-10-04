@@ -6,7 +6,7 @@ import (
 
 	client "github.com/wamp3hub/wamp3go"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 type Dealer struct {
@@ -161,7 +161,7 @@ func (dealer *Dealer) Setup(
 		options *client.RegisterOptions,
 		procedure func(request client.CallEvent) client.ReplyEvent,
 	) {
-		registration := client.Registration{uuid.NewString(), uri, session.ID(), options}
+		registration := client.Registration{xid.New().String(), uri, session.ID(), options}
 		dealer.registrations.Add(&registration)
 		session.Registrations[registration.ID] = procedure
 	}
@@ -174,7 +174,7 @@ func (dealer *Dealer) Setup(
 			payload := new(client.NewResourcePayload[client.RegisterOptions])
 			e := request.Payload(payload)
 			if e == nil {
-				registration := client.Registration{uuid.NewString(), payload.URI, route.CallerID, payload.Options}
+				registration := client.Registration{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = dealer.registrations.Add(&registration)
 				if e == nil {
 					return client.NewReplyEvent(request.ID(), registration)
@@ -209,7 +209,7 @@ func (dealer *Dealer) Setup(
 			payload := new(client.NewResourcePayload[client.SubscribeOptions])
 			e := request.Payload(payload)
 			if e == nil {
-				subscription := client.Subscription{uuid.NewString(), payload.URI, route.CallerID, payload.Options}
+				subscription := client.Subscription{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = broker.subscriptions.Add(&subscription)
 				if e == nil {
 					return client.NewReplyEvent(request.ID(), subscription)
