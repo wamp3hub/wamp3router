@@ -7,10 +7,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/rs/xid v1.5.0
-	github.com/wamp3hub/wamp3go v0.0.0-20231003125824-6d8ffdf1dee8
+	github.com/wamp3hub/wamp3go v0.2.3
 )
 
-require (
-	github.com/google/uuid v1.3.1 // indirect
-	golang.org/x/sys v0.12.0 // indirect
-)
+require golang.org/x/sys v0.12.0 // indirect
