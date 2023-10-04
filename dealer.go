@@ -57,6 +57,19 @@ func (dealer *Dealer) onYield(
 		}
 	}
 
+	e = caller.Send(yieldEvent)
+	if e == nil {
+		log.Printf(
+			"[dealer] generator done (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+			caller.ID, executor.ID, yieldEvent.ID(),
+		)
+	}
+	
+	log.Printf(
+		"[dealer] destroy generator (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+		caller.ID, executor.ID, yieldEvent.ID(),
+	)
+
 	return e
 }
 
