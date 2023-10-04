@@ -80,7 +80,6 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 	features := request.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
-	// TODO select best registration
 	registrationList := dealer.registrations.Match(features.URI)
 	for _, registration := range registrationList {
 		executor, exists := dealer.peers[registration.AuthorID]
