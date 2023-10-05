@@ -3,24 +3,24 @@ package wamp3router
 import (
 	"log"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 
 	"github.com/rs/xid"
 )
 
 type Broker struct {
-	subscriptions *URIM[*client.SubscribeOptions]
-	peers         map[string]*client.Peer
+	subscriptions *URIM[*wamp.SubscribeOptions]
+	peers         map[string]*wamp.Peer
 }
 
 func NewBroker(storage Storage) *Broker {
 	return &Broker{
-		NewURIM[*client.SubscribeOptions](storage),
-		make(map[string]*client.Peer),
+		NewURIM[*wamp.SubscribeOptions](storage),
+		make(map[string]*wamp.Peer),
 	}
 }
 
-func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEvent) (e error) {
+func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) (e error) {
 	route := request.Route()
 	route.PublisherID = publisher.ID
 	features := request.Features()
@@ -59,17 +59,17 @@ func (broker *Broker) onPublish(publisher *client.Peer, request client.PublishEv
 	return nil
 }
 
-func (broker *Broker) onLeave(peer *client.Peer) {
+func (broker *Broker) onLeave(peer *wamp.Peer) {
 	broker.subscriptions.ClearByAuthor(peer.ID)
 	delete(broker.peers, peer.ID)
 	log.Printf("[broker] dettach peer (ID=%s)", peer.ID)
 }
 
-func (broker *Broker) onJoin(peer *client.Peer) {
+func (broker *Broker) onJoin(peer *wamp.Peer) {
 	log.Printf("[broker] attach peer (ID=%s)", peer.ID)
 	broker.peers[peer.ID] = peer
 	peer.IncomingPublishEvents.Consume(
-		func(event client.PublishEvent) { broker.onPublish(peer, event) },
+		func(event wamp.PublishEvent) { broker.onPublish(peer, event) },
 		func() { broker.onLeave(peer) },
 	)
 }
@@ -83,22 +83,22 @@ func (broker *Broker) Serve(newcomers *Newcomers) {
 }
 
 func (broker *Broker) Setup(
-	session *client.Session,
+	session *wamp.Session,
 	dealer *Dealer,
 ) {
 	mount := func(
 		uri string,
-		options *client.SubscribeOptions,
-		procedure func(request client.PublishEvent),
+		options *wamp.SubscribeOptions,
+		procedure wamp.PublishEndpoint,
 	) {
-		subscription := client.Subscription{xid.New().String(), uri, session.ID(), options}
+		subscription := wamp.Subscription{xid.New().String(), uri, session.ID(), options}
 		broker.subscriptions.Add(&subscription)
 		session.Subscriptions[subscription.ID] = procedure
 	}
 
 	mount(
-		"wamp.client.new",
-		&client.SubscribeOptions{},
-		func(request client.PublishEvent) {},
+		"wamp.wamp.new",
+		&wamp.SubscribeOptions{},
+		func(request wamp.PublishEvent) {},
 	)
 }

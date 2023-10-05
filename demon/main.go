@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 	clientShared "github.com/wamp3hub/wamp3go/shared"
 	"github.com/wamp3hub/wamp3go/transport"
 
@@ -33,9 +33,9 @@ func Serve(
 	if e == nil {
 		peerID := xid.New().String()
 		alphaTransport, betaTransport := transport.NewDuplexLocalTransport()
-		alphaPeer := client.NewPeer(peerID, alphaTransport)
-		betaPeer := client.NewPeer(peerID, betaTransport)
-		session := client.NewSession(alphaPeer)
+		alphaPeer := wamp.NewPeer(peerID, alphaTransport)
+		betaPeer := wamp.NewPeer(peerID, betaTransport)
+		session := wamp.NewSession(alphaPeer)
 
 		broker := router.NewBroker(storage)
 		dealer := router.NewDealer(storage)
@@ -43,10 +43,10 @@ func Serve(
 		broker.Setup(session, dealer)
 		dealer.Setup(session, broker)
 
-		newcomersProducer, newcomers := clientShared.NewStream[*client.Peer]()
+		newcomersProducer, newcomers := clientShared.NewStream[*wamp.Peer]()
 		defer newcomersProducer.Close()
 		newcomers.Consume(
-			func(peer *client.Peer) {
+			func(peer *wamp.Peer) {
 				log.Printf("[router] attach peer (ID=%s)", peer.ID)
 				peer.Consume()
 				log.Printf("[router] dettach peer (ID=%s)", peer.ID)

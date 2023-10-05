@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/xid"
@@ -15,10 +15,10 @@ import (
 
 type Interviewer struct {
 	privateKey *rsa.PrivateKey
-	session    *client.Session
+	session    *wamp.Session
 }
 
-func NewInterviewer(session *client.Session) (*Interviewer, error) {
+func NewInterviewer(session *wamp.Session) (*Interviewer, error) {
 	privateKey, e := rsa.GenerateKey(rand.Reader, 2048)
 	if e == nil {
 		instance := Interviewer{privateKey, session}
@@ -33,7 +33,7 @@ func (interviewer *Interviewer) generatePeerID() string {
 
 func (interviewer *Interviewer) GenerateClaims(credentials any) (*jwt.RegisteredClaims, error) {
 	log.Printf("[interviewer] credentials=%s", credentials)
-	callEvent := client.NewCallEvent(&client.CallFeatures{"wamp.authenticate"}, credentials)
+	callEvent := wamp.NewCallEvent(&wamp.CallFeatures{"wamp.authenticate"}, credentials)
 	replyEvent := interviewer.session.Call(callEvent)
 	e := replyEvent.Error()
 	if e != nil {

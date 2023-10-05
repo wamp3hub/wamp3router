@@ -1,11 +1,11 @@
 package wamp3router
 
 import (
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 	clientShared "github.com/wamp3hub/wamp3go/shared"
 )
 
-type Newcomers = clientShared.Consumer[*client.Peer]
+type Newcomers = clientShared.Consumer[*wamp.Peer]
 
 type Storage interface {
 	Get(bucketName string, key string, data any) error

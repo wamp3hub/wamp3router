@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 )
 
 var URI_RE, _ = regexp.Compile(`^(\*{1,2}|[_0-9a-z]+)(\.(\*{1,2}|[_0-9a-z]+))*$`)
@@ -20,18 +20,18 @@ func parseURI(v string) ([]string, error) {
 	return result, nil
 }
 
-type ResourceList[T any] []*client.Resource[T]
+type ResourceList[T any] []*wamp.Resource[T]
 
 type URIM[T any] struct {
-	root    *URISegment[*client.Resource[T]]
+	root    *URISegment[*wamp.Resource[T]]
 	storage Storage
 }
 
 func NewURIM[T any](storage Storage) *URIM[T] {
-	return &URIM[T]{newURISegment[*client.Resource[T]](nil), storage}
+	return &URIM[T]{newURISegment[*wamp.Resource[T]](nil), storage}
 }
 
-func (urim *URIM[T]) Add(resource *client.Resource[T]) error {
+func (urim *URIM[T]) Add(resource *wamp.Resource[T]) error {
 	path, e := parseURI(resource.URI)
 	if e == nil {
 		resourceList := urim.GetByAuthor(resource.AuthorID)

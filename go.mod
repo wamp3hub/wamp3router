@@ -11,3 +11,5 @@ require (
 )
 
 require golang.org/x/sys v0.12.0 // indirect
+
+replace github.com/wamp3hub/wamp3go => ../wamp3go

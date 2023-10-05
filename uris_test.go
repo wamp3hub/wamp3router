@@ -19,11 +19,11 @@ func deleteResource[T any](root *URISegment[T], path Path, resourceID string) {
 }
 
 func TestDump(t *testing.T) {
-	root := newURISegment[emptiness](nil)
+	root := newURISegment[Emptiness](nil)
 
 	temporaryResourcePath := Path{"wamp", "test"}
 	temporaryResourceID := xid.New().String()
-	insertResource(root, temporaryResourcePath, temporaryResourceID, emptiness{})
+	insertResource(root, temporaryResourcePath, temporaryResourceID, Emptiness{})
 	deleteResource(root, temporaryResourcePath, temporaryResourceID)
 
 	expectedPathList := []Path{
@@ -31,7 +31,7 @@ func TestDump(t *testing.T) {
 		Path{"wamp", "registration", "new"},
 	}
 	for _, path := range expectedPathList {
-		insertResource(root, path, xid.New().String(), emptiness{})
+		insertResource(root, path, xid.New().String(), Emptiness{})
 	}
 
 	pathDump := root.PathDump()

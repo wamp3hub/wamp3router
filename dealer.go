@@ -4,36 +4,32 @@ import (
 	"errors"
 	"log"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 
 	"github.com/rs/xid"
 )
 
-func shift[T any](items []T, x int) []T {
-	return append(items[x:], items[:x]...)
-}
-
 type Dealer struct {
-	registrations *URIM[*client.RegisterOptions]
-	peers         map[string]*client.Peer
+	registrations *URIM[*wamp.RegisterOptions]
+	peers         map[string]*wamp.Peer
 	counter       map[string]uint64
 }
 
 func NewDealer(storage Storage) *Dealer {
 	return &Dealer{
-		NewURIM[*client.RegisterOptions](storage),
-		make(map[string]*client.Peer),
+		NewURIM[*wamp.RegisterOptions](storage),
+		make(map[string]*wamp.Peer),
 		make(map[string]uint64),
 	}
 }
 
 func (dealer *Dealer) onYield(
-	caller *client.Peer,
-	executor *client.Peer,
-	yieldEvent client.ReplyEvent,
+	caller *wamp.Peer,
+	executor *wamp.Peer,
+	yieldEvent wamp.ReplyEvent,
 ) (e error) {
-	for yieldEvent.Kind() == client.MK_YIELD {
-		nextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), client.DEFAULT_GENERATOR_LIFETIME)
+	for yieldEvent.Kind() == wamp.MK_YIELD {
+		nextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
 		e = caller.Send(yieldEvent)
 		if e == nil {
 			log.Printf(
@@ -49,7 +45,7 @@ func (dealer *Dealer) onYield(
 				caller.ID, executor.ID, nextEvent.ID(),
 			)
 
-			yieldEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), client.DEFAULT_TIMEOUT)
+			yieldEventPromise := executor.PendingReplyEvents.New(nextEvent.ID(), wamp.DEFAULT_TIMEOUT)
 			e := executor.Send(nextEvent)
 			if e == nil {
 				yieldEvent, done = <-yieldEventPromise
@@ -79,7 +75,11 @@ func (dealer *Dealer) onYield(
 	return e
 }
 
-func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e error) {
+func shift[T any](items []T, x int) []T {
+	return append(items[x:], items[:x]...)
+}
+
+func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error) {
 	route := request.Route()
 	route.CallerID = caller.ID
 
@@ -108,7 +108,7 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		replyEventPromise := executor.PendingReplyEvents.New(request.ID(), client.DEFAULT_TIMEOUT)
+		replyEventPromise := executor.PendingReplyEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
 		e = executor.Send(request)
 		if e == nil {
 			log.Printf(
@@ -129,8 +129,8 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
 				features.URI, caller.ID, executor.ID, registration.ID, e,
 			)
-			response = client.NewErrorEvent(request, e)
-		} else if response.Kind() == client.MK_YIELD {
+			response = wamp.NewErrorEvent(request, e)
+		} else if response.Kind() == wamp.MK_YIELD {
 			return dealer.onYield(caller, executor, response)
 		}
 
@@ -150,22 +150,22 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 	}
 
 	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
-	response := client.NewErrorEvent(request, errors.New("ProcedureNotFound"))
+	response := wamp.NewErrorEvent(request, errors.New("ProcedureNotFound"))
 	e = caller.Send(response)
 	return e
 }
 
-func (dealer *Dealer) onLeave(peer *client.Peer) {
+func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 	dealer.registrations.ClearByAuthor(peer.ID)
 	delete(dealer.peers, peer.ID)
 	log.Printf("[dealer] dettach peer (ID=%s)", peer.ID)
 }
 
-func (dealer *Dealer) onJoin(peer *client.Peer) {
+func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	log.Printf("[dealer] attach peer (ID=%s)", peer.ID)
 	dealer.peers[peer.ID] = peer
 	peer.IncomingCallEvents.Consume(
-		func(event client.CallEvent) { dealer.onCall(peer, event) },
+		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
 		func() { dealer.onLeave(peer) },
 	)
 }
@@ -179,104 +179,104 @@ func (dealer *Dealer) Serve(newcomers *Newcomers) {
 }
 
 func (dealer *Dealer) Setup(
-	session *client.Session,
+	session *wamp.Session,
 	broker *Broker,
 ) {
 	mount := func(
 		uri string,
-		options *client.RegisterOptions,
-		procedure func(callEvent client.CallEvent) client.ReplyEvent,
+		options *wamp.RegisterOptions,
+		procedure func(callEvent wamp.CallEvent) wamp.ReplyEvent,
 	) {
-		registration := client.Registration{xid.New().String(), uri, session.ID(), options}
+		registration := wamp.Registration{xid.New().String(), uri, session.ID(), options}
 		dealer.registrations.Add(&registration)
 		session.Registrations[registration.ID] = procedure
 	}
 
 	mount(
 		"wamp.register",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
-			payload := new(client.NewResourcePayload[client.RegisterOptions])
+			payload := new(wamp.NewResourcePayload[wamp.RegisterOptions])
 			e := callEvent.Payload(payload)
 			if e == nil {
-				registration := client.Registration{xid.New().String(), payload.URI, route.CallerID, payload.Options}
+				registration := wamp.Registration{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = dealer.registrations.Add(&registration)
 				if e == nil {
-					return client.NewReplyEvent(callEvent, registration)
+					return wamp.NewReplyEvent(callEvent, registration)
 				}
 			}
-			return client.NewErrorEvent(callEvent, e)
+			return wamp.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.subscribe",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
-			payload := new(client.NewResourcePayload[client.SubscribeOptions])
+			payload := new(wamp.NewResourcePayload[wamp.SubscribeOptions])
 			e := callEvent.Payload(payload)
 			if e == nil {
-				subscription := client.Subscription{xid.New().String(), payload.URI, route.CallerID, payload.Options}
+				subscription := wamp.Subscription{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = broker.subscriptions.Add(&subscription)
 				if e == nil {
-					return client.NewReplyEvent(callEvent, subscription)
+					return wamp.NewReplyEvent(callEvent, subscription)
 				}
 			}
-			return client.NewErrorEvent(callEvent, e)
+			return wamp.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.unregister",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
-			payload := new(client.DeleteResourcePayload)
+			payload := new(wamp.DeleteResourcePayload)
 			e := callEvent.Payload(payload)
 			if e == nil {
 				e = dealer.registrations.DeleteByAuthor(route.CallerID, payload.ID)
 				if e == nil {
-					return client.NewReplyEvent(callEvent, true)
+					return wamp.NewReplyEvent(callEvent, true)
 				}
 			}
-			return client.NewErrorEvent(callEvent, e)
+			return wamp.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.unsubscribe",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
-			payload := new(client.DeleteResourcePayload)
+			payload := new(wamp.DeleteResourcePayload)
 			e := callEvent.Payload(payload)
 			if e == nil {
 				e = broker.subscriptions.DeleteByAuthor(route.CallerID, payload.ID)
 				if e == nil {
-					return client.NewReplyEvent(callEvent, true)
+					return wamp.NewReplyEvent(callEvent, true)
 				}
 			}
-			return client.NewErrorEvent(callEvent, e)
+			return wamp.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.registration.uri.list",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			URIList := dealer.registrations.DumpURIList()
-			return client.NewReplyEvent(callEvent, URIList)
+			return wamp.NewReplyEvent(callEvent, URIList)
 		},
 	)
 
 	mount(
 		"wamp.subscription.uri.list",
-		&client.RegisterOptions{},
-		func(callEvent client.CallEvent) client.ReplyEvent {
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			URIList := broker.subscriptions.DumpURIList()
-			return client.NewReplyEvent(callEvent, URIList)
+			return wamp.NewReplyEvent(callEvent, URIList)
 		},
 	)
 }

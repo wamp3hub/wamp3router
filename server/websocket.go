@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	client "github.com/wamp3hub/wamp3go"
+	wamp "github.com/wamp3hub/wamp3go"
 	"github.com/wamp3hub/wamp3go/serializer"
 	"github.com/wamp3hub/wamp3go/shared"
 	"github.com/wamp3hub/wamp3go/transport"
@@ -16,7 +16,7 @@ import (
 
 func WebsocketMount(
 	interviewer *service.Interviewer,
-	newcomers *shared.Producer[*client.Peer],
+	newcomers *shared.Producer[*wamp.Peer],
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -36,7 +36,7 @@ func WebsocketMount(
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
 				__transport := transport.WSTransport(__serializer, connection)
-				peer := client.NewPeer(claims.Subject, __transport)
+				peer := wamp.NewPeer(claims.Subject, __transport)
 				newcomers.Produce(peer)
 				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
 			} else {
