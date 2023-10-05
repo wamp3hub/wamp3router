@@ -10,7 +10,7 @@ import (
 )
 
 func InterviewMount(interviewer *service.Interviewer) http.Handler {
-	onJoin := func(request *http.Request) (int, any) {
+	onInterview := func(request *http.Request) (int, any) {
 		requestPayload := interview.Payload{}
 		e := readJSONBody(request.Body, &requestPayload)
 		if e == nil {
@@ -30,6 +30,6 @@ func InterviewMount(interviewer *service.Interviewer) http.Handler {
 
 	log.Print("[interview] up...")
 	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", jsonEndpoint(onJoin))
+	serveMux.HandleFunc("/", jsonEndpoint(onInterview))
 	return serveMux
 }

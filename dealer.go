@@ -9,15 +9,21 @@ import (
 	"github.com/rs/xid"
 )
 
+func shift[T any](items []T, x int) []T {
+	return append(items[x:], items[:x]...)
+}
+
 type Dealer struct {
 	registrations *URIM[*client.RegisterOptions]
 	peers         map[string]*client.Peer
+	counter       map[string]uint64
 }
 
 func NewDealer(storage Storage) *Dealer {
 	return &Dealer{
 		NewURIM[*client.RegisterOptions](storage),
 		make(map[string]*client.Peer),
+		make(map[string]uint64),
 	}
 }
 
@@ -81,6 +87,14 @@ func (dealer *Dealer) onCall(caller *client.Peer, request client.CallEvent) (e e
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
 	registrationList := dealer.registrations.Match(features.URI)
+
+	n := len(registrationList)
+	if n > 0 {
+		offset := int(dealer.counter[features.URI]) % n
+		registrationList = shift(registrationList, offset)
+		dealer.counter[features.URI] += 1
+	}
+
 	for _, registration := range registrationList {
 		executor, exists := dealer.peers[registration.AuthorID]
 		if !exists {
@@ -171,7 +185,7 @@ func (dealer *Dealer) Setup(
 	mount := func(
 		uri string,
 		options *client.RegisterOptions,
-		procedure func(request client.CallEvent) client.ReplyEvent,
+		procedure func(callEvent client.CallEvent) client.ReplyEvent,
 	) {
 		registration := client.Registration{xid.New().String(), uri, session.ID(), options}
 		dealer.registrations.Add(&registration)
@@ -181,70 +195,88 @@ func (dealer *Dealer) Setup(
 	mount(
 		"wamp.register",
 		&client.RegisterOptions{},
-		func(request client.CallEvent) client.ReplyEvent {
-			route := request.Route()
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			route := callEvent.Route()
 			payload := new(client.NewResourcePayload[client.RegisterOptions])
-			e := request.Payload(payload)
+			e := callEvent.Payload(payload)
 			if e == nil {
 				registration := client.Registration{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = dealer.registrations.Add(&registration)
 				if e == nil {
-					return client.NewReplyEvent(request, registration)
+					return client.NewReplyEvent(callEvent, registration)
 				}
 			}
-			return client.NewErrorEvent(request, e)
-		},
-	)
-
-	mount(
-		"wamp.unregister",
-		&client.RegisterOptions{},
-		func(request client.CallEvent) client.ReplyEvent {
-			route := request.Route()
-			payload := new(client.DeleteResourcePayload)
-			e := request.Payload(payload)
-			if e == nil {
-				e = dealer.registrations.DeleteByAuthor(route.CallerID, payload.ID)
-				if e == nil {
-					return client.NewReplyEvent(request, true)
-				}
-			}
-			return client.NewErrorEvent(request, e)
+			return client.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.subscribe",
 		&client.RegisterOptions{},
-		func(request client.CallEvent) client.ReplyEvent {
-			route := request.Route()
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			route := callEvent.Route()
 			payload := new(client.NewResourcePayload[client.SubscribeOptions])
-			e := request.Payload(payload)
+			e := callEvent.Payload(payload)
 			if e == nil {
 				subscription := client.Subscription{xid.New().String(), payload.URI, route.CallerID, payload.Options}
 				e = broker.subscriptions.Add(&subscription)
 				if e == nil {
-					return client.NewReplyEvent(request, subscription)
+					return client.NewReplyEvent(callEvent, subscription)
 				}
 			}
-			return client.NewErrorEvent(request, e)
+			return client.NewErrorEvent(callEvent, e)
+		},
+	)
+
+	mount(
+		"wamp.unregister",
+		&client.RegisterOptions{},
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			route := callEvent.Route()
+			payload := new(client.DeleteResourcePayload)
+			e := callEvent.Payload(payload)
+			if e == nil {
+				e = dealer.registrations.DeleteByAuthor(route.CallerID, payload.ID)
+				if e == nil {
+					return client.NewReplyEvent(callEvent, true)
+				}
+			}
+			return client.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
 		"wamp.unsubscribe",
 		&client.RegisterOptions{},
-		func(request client.CallEvent) client.ReplyEvent {
-			route := request.Route()
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			route := callEvent.Route()
 			payload := new(client.DeleteResourcePayload)
-			e := request.Payload(payload)
+			e := callEvent.Payload(payload)
 			if e == nil {
 				e = broker.subscriptions.DeleteByAuthor(route.CallerID, payload.ID)
 				if e == nil {
-					return client.NewReplyEvent(request, true)
+					return client.NewReplyEvent(callEvent, true)
 				}
 			}
-			return client.NewErrorEvent(request, e)
+			return client.NewErrorEvent(callEvent, e)
+		},
+	)
+
+	mount(
+		"wamp.registration.uri.list",
+		&client.RegisterOptions{},
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			URIList := dealer.registrations.DumpURIList()
+			return client.NewReplyEvent(callEvent, URIList)
+		},
+	)
+
+	mount(
+		"wamp.subscription.uri.list",
+		&client.RegisterOptions{},
+		func(callEvent client.CallEvent) client.ReplyEvent {
+			URIList := broker.subscriptions.DumpURIList()
+			return client.NewReplyEvent(callEvent, URIList)
 		},
 	)
 }

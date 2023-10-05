@@ -25,19 +25,10 @@ type ResourceList[T any] []*client.Resource[T]
 type URIM[T any] struct {
 	root    *URISegment[*client.Resource[T]]
 	storage Storage
-	counter map[string]uint64
 }
 
 func NewURIM[T any](storage Storage) *URIM[T] {
-	return &URIM[T]{
-		&URISegment[*client.Resource[T]]{
-			Parent:   nil,
-			Children: make(map[string]*URISegment[*client.Resource[T]]),
-			Data:     make(map[string]*client.Resource[T]),
-		},
-		storage,
-		make(map[string]uint64),
-	}
+	return &URIM[T]{newURISegment[*client.Resource[T]](nil), storage}
 }
 
 func (urim *URIM[T]) Add(resource *client.Resource[T]) error {
@@ -56,10 +47,6 @@ func (urim *URIM[T]) Add(resource *client.Resource[T]) error {
 	return e
 }
 
-func shift[T any](items []T, x int) []T {
-	return append(items[x:], items[:x]...)
-}
-
 // returns empty slice if something went wrong
 func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
@@ -70,13 +57,6 @@ func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 			for _, resource := range segment.Data {
 				resourceList = append(resourceList, resource)
 			}
-		}
-
-		n := len(resourceList)
-		if n > 0 {
-			offset := int(urim.counter[uri]) % n
-			resourceList = shift(resourceList, offset)
-			urim.counter[uri] += 1
 		}
 	}
 
@@ -123,4 +103,14 @@ func (urim *URIM[T]) DeleteByAuthor(ID string, routeID string) error {
 func (urim *URIM[T]) ClearByAuthor(ID string) error {
 	e := urim.DeleteByAuthor(ID, "")
 	return e
+}
+
+func (urim *URIM[T]) DumpURIList() []string {
+	result := []string{}
+	pathList := urim.root.PathDump()
+	for _, path := range pathList {
+		uri := strings.Join(path, ".")
+		result = append(result, uri)
+	}
+	return result
 }
