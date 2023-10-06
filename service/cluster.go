@@ -25,7 +25,7 @@ func (distributor *EventDistributor) addFreind(instance *wamp.Session) {
 }
 
 func (distributor *EventDistributor) Connect(address string) error {
-	session, e := wampTransport.WebsocketJoin(address, wampSerializer.DefaultJSONSerializer, router.Emptiness{})
+	session, e := wampTransport.WebsocketJoin(address, wampSerializer.DefaultSerializer, router.Emptiness{})
 	if e == nil {
 		distributor.addFreind(session)
 	}
