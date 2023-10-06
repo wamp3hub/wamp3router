@@ -4,6 +4,7 @@ import (
 	"log"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
 
 	"github.com/rs/xid"
 )
@@ -68,15 +69,15 @@ func (broker *Broker) onLeave(peer *wamp.Peer) {
 func (broker *Broker) onJoin(peer *wamp.Peer) {
 	log.Printf("[broker] attach peer (ID=%s)", peer.ID)
 	broker.peers[peer.ID] = peer
-	peer.IncomingPublishEvents.Consume(
+	peer.ConsumeIncomingPublishEvents(
 		func(event wamp.PublishEvent) { broker.onPublish(peer, event) },
 		func() { broker.onLeave(peer) },
 	)
 }
 
-func (broker *Broker) Serve(newcomers *Newcomers) {
+func (broker *Broker) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) {
 	log.Printf("[broker] up...")
-	newcomers.Consume(
+	consumeNewcomers(
 		broker.onJoin,
 		func() { log.Printf("[broker] down...") },
 	)

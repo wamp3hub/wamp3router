@@ -5,6 +5,7 @@ import (
 	"log"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
 
 	"github.com/rs/xid"
 )
@@ -164,15 +165,15 @@ func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	log.Printf("[dealer] attach peer (ID=%s)", peer.ID)
 	dealer.peers[peer.ID] = peer
-	peer.IncomingCallEvents.Consume(
+	peer.ConsumeIncomingCallEvents(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
 		func() { dealer.onLeave(peer) },
 	)
 }
 
-func (dealer *Dealer) Serve(newcomers *Newcomers) {
+func (dealer *Dealer) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) {
 	log.Printf("[dealer] up...")
-	newcomers.Consume(
+	consumeNewcomers(
 		dealer.onJoin,
 		func() { log.Printf("[dealer] down...") },
 	)

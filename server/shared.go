@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	interview "github.com/wamp3hub/wamp3go/transport/interview"
+	wampInterview "github.com/wamp3hub/wamp3go/transport/interview"
 )
 
 func readJSONBody(requestBody io.ReadCloser, v any) error {
@@ -24,7 +24,7 @@ func writeJSONBody(
 ) error {
 	e, isError := payload.(error)
 	if isError {
-		payload = interview.ErrorPayload{e.Error()}
+		payload = wampInterview.ErrorPayload{e.Error()}
 	}
 	responseBodyBytes, e := json.Marshal(payload)
 	if e == nil {

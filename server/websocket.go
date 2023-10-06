@@ -7,16 +7,16 @@ import (
 	"github.com/gorilla/websocket"
 
 	wamp "github.com/wamp3hub/wamp3go"
-	"github.com/wamp3hub/wamp3go/serializer"
-	"github.com/wamp3hub/wamp3go/shared"
-	"github.com/wamp3hub/wamp3go/transport"
+	wampSerializer "github.com/wamp3hub/wamp3go/serializer"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
+	wampTransport "github.com/wamp3hub/wamp3go/transport"
 
 	service "github.com/wamp3hub/wamp3router/service"
 )
 
 func WebsocketMount(
 	interviewer *service.Interviewer,
-	newcomers *shared.Producer[*wamp.Peer],
+	produceNewcomers wampShared.Producible[*wamp.Peer],
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -32,12 +32,12 @@ func WebsocketMount(
 		claims, e := interviewer.Decode(token)
 		if e == nil {
 			// serializerCode := query.Get("serializer")
-			__serializer := new(serializer.JSONSerializer)
+			__serializer := new(wampSerializer.JSONSerializer)
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
-				__transport := transport.WSTransport(__serializer, connection)
+				__transport := wampTransport.WSTransport(__serializer, connection)
 				peer := wamp.NewPeer(claims.Subject, __transport)
-				newcomers.Produce(peer)
+				produceNewcomers(peer)
 				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
 			} else {
 				log.Printf("[websocket] %s", e)

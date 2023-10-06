@@ -69,7 +69,7 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 
 	e := urim.storage.Get("resources", ID, &resourceList)
 	if e != nil {
-		log.Printf("Matcher.GetByAuthor %s", e)
+		log.Printf("[urim] GetByAuthor %s", e)
 	}
 
 	return resourceList

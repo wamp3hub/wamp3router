@@ -1,14 +1,15 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 
 	wamp "github.com/wamp3hub/wamp3go"
-	clientShared "github.com/wamp3hub/wamp3go/shared"
-	"github.com/wamp3hub/wamp3go/transport"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
+	wampTransport "github.com/wamp3hub/wamp3go/transport"
 
 	"github.com/rs/xid"
 
@@ -18,60 +19,81 @@ import (
 	"github.com/wamp3hub/wamp3router/storage"
 )
 
-func Serve(
+func routerServe(
+	consumeNewcomers wampShared.Consumable[*wamp.Peer],
+	produceNewcomer wampShared.Producible[*wamp.Peer],
+	storage router.Storage,
+) *wamp.Session {
+	log.Printf("[router] up...")
+
+	peerID := xid.New().String()
+	alphaTransport, betaTransport := wampTransport.NewDuplexLocalTransport()
+	alphaPeer := wamp.NewPeer(peerID, alphaTransport)
+	betaPeer := wamp.NewPeer(peerID, betaTransport)
+	session := wamp.NewSession(alphaPeer)
+
+	broker := router.NewBroker(storage)
+	dealer := router.NewDealer(storage)
+
+	broker.Setup(session, dealer)
+	dealer.Setup(session, broker)
+
+	consumeNewcomers(
+		func(peer *wamp.Peer) {
+			log.Printf("[router] attach peer (ID=%s)", peer.ID)
+			peer.Consume()
+			log.Printf("[router] dettach peer (ID=%s)", peer.ID)
+		},
+		func() { log.Printf("[router] down...") },
+	)
+	broker.Serve(consumeNewcomers)
+	dealer.Serve(consumeNewcomers)
+
+	go alphaPeer.Consume()
+	produceNewcomer(betaPeer)
+
+	return session
+}
+
+func httpServe(
+	interviewer *service.Interviewer,
+	produceNewcomer wampShared.Producible[*wamp.Peer],
 	address string,
-	disableWebsocket bool,
+	enableWebsocket bool,
 ) error {
+	http.Handle("/wamp3/interview", server.InterviewMount(interviewer))
+	if enableWebsocket {
+		http.Handle("/wamp3/websocket", server.WebsocketMount(interviewer, produceNewcomer))
+	}
+
+	log.Printf("[router] Starting at %s", address)
+	e := http.ListenAndServe(address, nil)
+	return e
+}
+
+func main() {
+	address := flag.String("address", ":8888", "")
+	flag.Parse()
+
 	log.SetFlags(0)
 
 	pid := fmt.Sprint(os.Getpid())
-	log.Printf("[router] up... (PID=%s)", pid)
 
 	storagePath := "/tmp/" + pid + ".db"
 	storage, e := storage.NewBoltDBStorage(storagePath)
 	defer storage.Destroy()
 	if e == nil {
-		peerID := xid.New().String()
-		alphaTransport, betaTransport := transport.NewDuplexLocalTransport()
-		alphaPeer := wamp.NewPeer(peerID, alphaTransport)
-		betaPeer := wamp.NewPeer(peerID, betaTransport)
-		session := wamp.NewSession(alphaPeer)
+		consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
+		defer closeNewcomers()
 
-		broker := router.NewBroker(storage)
-		dealer := router.NewDealer(storage)
+		session := routerServe(consumeNewcomers, produceNewcomer, storage)
 
-		broker.Setup(session, dealer)
-		dealer.Setup(session, broker)
-
-		newcomersProducer, newcomers := clientShared.NewStream[*wamp.Peer]()
-		defer newcomersProducer.Close()
-		newcomers.Consume(
-			func(peer *wamp.Peer) {
-				log.Printf("[router] attach peer (ID=%s)", peer.ID)
-				peer.Consume()
-				log.Printf("[router] dettach peer (ID=%s)", peer.ID)
-			},
-			func() { log.Printf("[router] down...") },
-		)
-		broker.Serve(newcomers)
-		dealer.Serve(newcomers)
-
-		go alphaPeer.Consume()
-		newcomersProducer.Produce(betaPeer)
+		cluster := service.NewEventDistributor()
+		if cluster.FriendsCount() > 0 {
+			service.SpawnEventRepeater(session, cluster)
+		}
 
 		interviewer, _ := service.NewInterviewer(session)
-
-		http.Handle("/wamp3/interview", server.InterviewMount(interviewer))
-		if !disableWebsocket {
-			http.Handle("/wamp3/websocket", server.WebsocketMount(interviewer, newcomersProducer))
-		}
-		log.Printf("[router] Starting at %s", address)
-		e = http.ListenAndServe(address, nil)
+		httpServe(interviewer, produceNewcomer, *address, true)
 	}
-
-	return e
-}
-
-func main() {
-	Serve(":8888", false)
 }

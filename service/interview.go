@@ -32,7 +32,6 @@ func (interviewer *Interviewer) generatePeerID() string {
 }
 
 func (interviewer *Interviewer) GenerateClaims(credentials any) (*jwt.RegisteredClaims, error) {
-	log.Printf("[interviewer] credentials=%s", credentials)
 	callEvent := wamp.NewCallEvent(&wamp.CallFeatures{"wamp.authenticate"}, credentials)
 	replyEvent := interviewer.session.Call(callEvent)
 	e := replyEvent.Error()
