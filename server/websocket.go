@@ -15,7 +15,7 @@ import (
 )
 
 func WebsocketMount(
-	interviewer *service.Interviewer,
+	keyRing *service.KeyRing,
 	produceNewcomers wampShared.Producible[*wamp.Peer],
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
@@ -28,14 +28,15 @@ func WebsocketMount(
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[websocket] new upgrade request (ip=%s)", r.RemoteAddr)
 		query := r.URL.Query()
-		token := query.Get("token")
-		claims, e := interviewer.Decode(token)
+		ticket := query.Get("ticket")
+		claims, e := keyRing.JWTDecode(ticket)
 		if e == nil {
-			// serializerCode := query.Get("serializer")
-			__serializer := new(wampSerializer.JSONSerializer)
+			header := w.Header()
+			header.Set("X-WAMP-RouterID", claims.Issuer)
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
-				__transport := wampTransport.WSTransport(__serializer, connection)
+				// serializerCode := query.Get("serializer")
+				__transport := wampTransport.WSTransport(wampSerializer.DefaultSerializer, connection)
 				peer := wamp.NewPeer(claims.Subject, __transport)
 				produceNewcomers(peer)
 				log.Printf("[websocket] new peer (ID=%s)", peer.ID)

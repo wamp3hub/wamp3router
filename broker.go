@@ -98,7 +98,7 @@ func (broker *Broker) Setup(
 	}
 
 	mount(
-		"wamp.wamp.new",
+		"wamp.session.new",
 		&wamp.SubscribeOptions{},
 		func(request wamp.PublishEvent) {},
 	)
