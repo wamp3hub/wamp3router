@@ -3,10 +3,11 @@ package wamp3router
 import (
 	"log"
 
+	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
-	"github.com/rs/xid"
+	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
 type Broker struct {
@@ -28,7 +29,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 	log.Printf("[broker] publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
 
 	// includeSet := NewSet(features.Include)
-	excludeSet := NewSet(features.Exclude)
+	excludeSet := routerShared.NewSet(features.Exclude)
 	subscriptionList := broker.subscriptions.Match(features.URI)
 	for _, subscription := range subscriptionList {
 		if excludeSet.Contains(subscription.AuthorID) {
@@ -48,7 +49,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 		route.EndpointID = subscription.ID
 		route.SubscriberID = subscriber.ID
 
-		e := subscriber.Send(request)
+		e := subscriber.Say(request)
 		if e == nil {
 			log.Printf(
 				"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
@@ -61,7 +62,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 }
 
 func (broker *Broker) onLeave(peer *wamp.Peer) {
-	broker.subscriptions.ClearByAuthor(peer.ID)
+	broker.subscriptions.CleanByAuthor(peer.ID)
 	delete(broker.peers, peer.ID)
 	log.Printf("[broker] dettach peer (ID=%s)", peer.ID)
 }
@@ -92,7 +93,12 @@ func (broker *Broker) Setup(
 		options *wamp.SubscribeOptions,
 		procedure wamp.PublishEndpoint,
 	) {
-		subscription := wamp.Subscription{xid.New().String(), uri, session.ID(), options}
+		subscription := wamp.Subscription{
+			ID: xid.New().String(),
+			URI: uri,
+			AuthorID: session.ID(),
+			Options: options,
+		}
 		broker.subscriptions.Add(&subscription)
 		session.Subscriptions[subscription.ID] = procedure
 	}

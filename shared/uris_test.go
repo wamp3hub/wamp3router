@@ -1,11 +1,10 @@
-package wamp3router
+package shared
 
 import (
 	"testing"
+	"strings"
 
 	"github.com/rs/xid"
-
-	"strings"
 )
 
 func insertResource[T any](root *URISegment[T], path Path, resourceID string, data T) {
@@ -19,7 +18,7 @@ func deleteResource[T any](root *URISegment[T], path Path, resourceID string) {
 }
 
 func TestDump(t *testing.T) {
-	root := newURISegment[Emptiness](nil)
+	root := NewURISegment[Emptiness](nil)
 
 	temporaryResourcePath := Path{"wamp", "test"}
 	temporaryResourceID := xid.New().String()

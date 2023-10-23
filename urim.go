@@ -7,7 +7,16 @@ import (
 	"strings"
 
 	wamp "github.com/wamp3hub/wamp3go"
+
+	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
+
+type Storage interface {
+	Get(bucketName string, key string, data any) error
+	Set(bucketName string, key string, data any) error
+	Delete(bucketName string, key string)
+	Destroy() error
+}
 
 var URI_RE, _ = regexp.Compile(`^(\*{1,2}|[_0-9a-z]+)(\.(\*{1,2}|[_0-9a-z]+))*$`)
 
@@ -23,21 +32,22 @@ func parseURI(v string) ([]string, error) {
 type ResourceList[T any] []*wamp.Resource[T]
 
 type URIM[T any] struct {
-	root    *URISegment[*wamp.Resource[T]]
+	root    *routerShared.URISegment[*wamp.Resource[T]]
 	storage Storage
 }
 
 func NewURIM[T any](storage Storage) *URIM[T] {
-	return &URIM[T]{newURISegment[*wamp.Resource[T]](nil), storage}
+	return &URIM[T]{
+		routerShared.NewURISegment[*wamp.Resource[T]](nil),
+		storage,
+	}
 }
 
 func (urim *URIM[T]) Add(resource *wamp.Resource[T]) error {
 	path, e := parseURI(resource.URI)
 	if e == nil {
 		resourceList := urim.GetByAuthor(resource.AuthorID)
-
 		newResourceList := append(resourceList, resource)
-
 		e = urim.SetByAuthor(resource.AuthorID, newResourceList)
 		if e == nil {
 			segment := urim.root.GetSert(path)
@@ -50,7 +60,6 @@ func (urim *URIM[T]) Add(resource *wamp.Resource[T]) error {
 // returns empty slice if something went wrong
 func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
-
 	path, e := parseURI(uri)
 	if e == nil {
 		for _, segment := range urim.root.Get(path) {
@@ -59,32 +68,36 @@ func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 			}
 		}
 	}
-
 	return resourceList
+}
+
+func (urim *URIM[T]) Count(uri string) int {
+	resourceList := urim.Match(uri)
+	return len(resourceList)
 }
 
 // returns empty list if something went wrong
 func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
-
 	e := urim.storage.Get("resources", ID, &resourceList)
 	if e != nil {
 		log.Printf("[urim] GetByAuthor %s", e)
 	}
-
 	return resourceList
 }
 
 func (urim *URIM[T]) SetByAuthor(ID string, newResourceList ResourceList[T]) error {
+	if len(newResourceList) == 0 {
+		urim.storage.Delete("resources", ID)
+		return nil
+	}
 	e := urim.storage.Set("resources", ID, newResourceList)
 	return e
 }
 
 func (urim *URIM[T]) DeleteByAuthor(ID string, routeID string) error {
-	resourceList := urim.GetByAuthor(ID)
-
 	deleteAll := len(routeID) == 0
-
+	resourceList := urim.GetByAuthor(ID)
 	newResourceList := ResourceList[T]{}
 	for _, resource := range resourceList {
 		if deleteAll || routeID == resource.ID {
@@ -95,12 +108,11 @@ func (urim *URIM[T]) DeleteByAuthor(ID string, routeID string) error {
 			newResourceList = append(newResourceList, resource)
 		}
 	}
-
 	e := urim.SetByAuthor(ID, newResourceList)
 	return e
 }
 
-func (urim *URIM[T]) ClearByAuthor(ID string) error {
+func (urim *URIM[T]) CleanByAuthor(ID string) error {
 	e := urim.DeleteByAuthor(ID, "")
 	return e
 }

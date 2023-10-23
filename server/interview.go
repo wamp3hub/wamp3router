@@ -5,30 +5,28 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampInterview "github.com/wamp3hub/wamp3go/transport/interview"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/rs/xid"
-
-	service "github.com/wamp3hub/wamp3router/service"
+	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
 func rpcAuthenticate(session *wamp.Session, credentials any) error {
-	callEvent := wamp.NewCallEvent(&wamp.CallFeatures{"wamp.authenticate"}, credentials)
-	replyEvent := session.Call(callEvent)
-	e := replyEvent.Error()
+	result := wamp.Call[string](session, &wamp.CallFeatures{URI: "wamp.authenticate"}, credentials)
+	_, _, e := result.Await()
 	if e == nil {
-		// TODO
+		// TODO roles
 		return nil
 	} else if e.Error() == "ProcedureNotFound" {
-		log.Printf("[interviewer] please, register `wamp.authenticate`")
+		log.Printf("[interview] please, register `wamp.authenticate`")
 		return nil
 	}
 	return e
 }
 
-func InterviewMount(session *wamp.Session, keyRing *service.KeyRing) http.Handler {
+func InterviewMount(session *wamp.Session, keyRing *routerShared.KeyRing) http.Handler {
 	onInterview := func(request *http.Request) (int, any) {
 		requestPayload := wampInterview.Payload{}
 		e := readJSONBody(request.Body, &requestPayload)
@@ -36,15 +34,19 @@ func InterviewMount(session *wamp.Session, keyRing *service.KeyRing) http.Handle
 			e = rpcAuthenticate(session, requestPayload.Credentials)
 			if e == nil {
 				now := time.Now()
-				claims := service.Claims{
+				claims := routerShared.JWTClaims{
 					Issuer:    session.ID(),
 					Subject:   session.ID() + "-" + xid.New().String(),
 					ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
 					IssuedAt:  jwt.NewNumericDate(now),
 				}
-				ticket, e := keyRing.JWTEncode(&claims)
+				ticket, e := keyRing.JWTSign(&claims)
 				if e == nil {
-					responsePayload := wampInterview.SuccessPayload{claims.Issuer, claims.Subject, ticket}
+					responsePayload := wampInterview.SuccessPayload{
+						RouterID: claims.Issuer,
+						YourID:   claims.Subject,
+						Ticket:   ticket,
+					}
 					log.Printf("[interview] success (peer.ID=%s)", responsePayload.YourID)
 					return 200, responsePayload
 				}

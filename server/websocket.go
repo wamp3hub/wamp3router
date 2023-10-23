@@ -11,11 +11,11 @@ import (
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransport "github.com/wamp3hub/wamp3go/transport"
 
-	service "github.com/wamp3hub/wamp3router/service"
+	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
 func WebsocketMount(
-	keyRing *service.KeyRing,
+	keyRing *routerShared.KeyRing,
 	produceNewcomers wampShared.Producible[*wamp.Peer],
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
@@ -29,7 +29,7 @@ func WebsocketMount(
 		log.Printf("[websocket] new upgrade request (ip=%s)", r.RemoteAddr)
 		query := r.URL.Query()
 		ticket := query.Get("ticket")
-		claims, e := keyRing.JWTDecode(ticket)
+		claims, e := keyRing.JWTParse(ticket)
 		if e == nil {
 			header := w.Header()
 			header.Set("X-WAMP-RouterID", claims.Issuer)
@@ -37,7 +37,7 @@ func WebsocketMount(
 			if e == nil {
 				// serializerCode := query.Get("serializer")
 				__transport := wampTransport.WSTransport(wampSerializer.DefaultSerializer, connection)
-				peer := wamp.NewPeer(claims.Subject, __transport)
+				peer := wamp.SpawnPeer(claims.Subject, __transport)
 				produceNewcomers(peer)
 				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
 			} else {

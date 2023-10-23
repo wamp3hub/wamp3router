@@ -24,7 +24,7 @@ func writeJSONBody(
 ) error {
 	e, isError := payload.(error)
 	if isError {
-		payload = wampInterview.ErrorPayload{e.Error()}
+		payload = wampInterview.ErrorPayload{Code: e.Error()}
 	}
 	responseBodyBytes, e := json.Marshal(payload)
 	if e == nil {

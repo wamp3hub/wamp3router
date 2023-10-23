@@ -1,4 +1,4 @@
-package wamp3router
+package shared
 
 const WILD_CARD_SYMBOL = "*"
 
@@ -18,7 +18,7 @@ func (segment *URISegment[T]) Empty() bool {
 	return len(segment.Data) == 0
 }
 
-func newURISegment[T any](parent *URISegment[T]) *URISegment[T] {
+func NewURISegment[T any](parent *URISegment[T]) *URISegment[T] {
 	return &URISegment[T]{parent, make(map[string]*URISegment[T]), make(map[string]T)}
 }
 
@@ -59,7 +59,7 @@ func (segment *URISegment[T]) GetSert(path Path) *URISegment[T] {
 
 	child, found := segment.Children[key]
 	if !found {
-		child = newURISegment(segment)
+		child = NewURISegment(segment)
 		segment.Children[key] = child
 	}
 
