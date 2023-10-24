@@ -22,7 +22,7 @@ func Initialize(
 ) *wamp.Session {
 	log.Printf("[router] up...")
 
-	alphaTransport, betaTransport := wampTransport.NewDuplexLocalTransport()
+	alphaTransport, betaTransport := wampTransport.NewDuplexLocalTransport(128)
 	alphaPeer := wamp.SpawnPeer(peerID, alphaTransport)
 	betaPeer := wamp.SpawnPeer(peerID, betaTransport)
 	session := wamp.NewSession(alphaPeer)

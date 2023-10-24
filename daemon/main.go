@@ -19,10 +19,8 @@ func main() {
 	pid := os.Getpid()
 
 	address := flag.String("address", ":8888", "")
-
 	__storagePath := "/tmp/wamp3router" + fmt.Sprint(pid) + ".db"
 	storagePath := flag.String("storagePath", __storagePath, "")
-
 	flag.Parse()
 
 	log.SetFlags(0)
@@ -36,13 +34,9 @@ func main() {
 	consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
 	defer closeNewcomers()
 
-	keyRing := routerShared.NewKeyRing()
-
 	peerID := xid.New().String()
 	session := router.Initialize(peerID, consumeNewcomers, produceNewcomer, storage)
 
+	keyRing := routerShared.NewKeyRing()
 	e = router.HTTPServe(session, keyRing, produceNewcomer, *address, true)
-	if e != nil {
-
-	}
 }

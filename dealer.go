@@ -117,7 +117,7 @@ func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error
 			)
 		} else {
 			log.Printf(
-				"[dealer] executor not accepted request (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				"[dealer] executor did not accept request (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
 				features.URI, caller.ID, registration.AuthorID, registration.ID, e,
 			)
 			continue
@@ -126,7 +126,7 @@ func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error
 		response, done := <-replyEventPromise
 		if !done {
 			log.Printf(
-				"[dealer] executor not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+				"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
 				features.URI, caller.ID, executor.ID, registration.ID,
 			)
 			response = wamp.NewErrorEvent(request, e)
