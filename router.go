@@ -18,7 +18,7 @@ func Initialize(
 	peerID string,
 	consumeNewcomers wampShared.Consumable[*wamp.Peer],
 	produceNewcomer wampShared.Producible[*wamp.Peer],
-	storage Storage,
+	storage routerShared.Storage,
 ) *wamp.Session {
 	log.Printf("[router] up...")
 
@@ -27,11 +27,11 @@ func Initialize(
 	betaPeer := wamp.SpawnPeer(peerID, betaTransport)
 	session := wamp.NewSession(alphaPeer)
 
-	broker := NewBroker(storage)
-	dealer := NewDealer(storage)
+	broker := NewBroker(session, storage)
+	dealer := NewDealer(session, storage)
 
-	broker.Setup(session, dealer)
-	dealer.Setup(session, broker)
+	broker.Setup(dealer)
+	dealer.Setup(broker)
 
 	consumeNewcomers(
 		func(peer *wamp.Peer) {

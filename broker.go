@@ -11,14 +11,57 @@ import (
 )
 
 type Broker struct {
-	subscriptions *URIM[*wamp.SubscribeOptions]
+	session       *wamp.Session
+	subscriptions *routerShared.URIM[*wamp.SubscribeOptions]
 	peers         map[string]*wamp.Peer
 }
 
-func NewBroker(storage Storage) *Broker {
+func NewBroker(
+	session *wamp.Session,
+	storage routerShared.Storage,
+) *Broker {
 	return &Broker{
-		NewURIM[*wamp.SubscribeOptions](storage),
+		session,
+		routerShared.NewURIM[*wamp.SubscribeOptions](storage),
 		make(map[string]*wamp.Peer),
+	}
+}
+
+func (broker *Broker) subscribe(
+	uri string,
+	authorID string,
+	options *wamp.SubscribeOptions,
+) (*wamp.Subscription, error) {
+	isNew := broker.subscriptions.Count(uri) == 0
+	subscription := wamp.Subscription{
+		ID:       xid.New().String(),
+		URI:      uri,
+		AuthorID: authorID,
+		Options:  options,
+	}
+	e := broker.subscriptions.Add(&subscription)
+	if e == nil {
+		if isNew {
+			e = wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.new"}, subscription)
+			if e == nil {
+				log.Printf("[broker] new subscription URI=%s", uri)
+			}
+		}
+		return &subscription, nil
+	}
+	return nil, e
+}
+
+func (broker *Broker) unsubscribe(
+	authorID string,
+	subscriptionID string,
+) {
+	emptyBranches := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
+	for _, uri := range emptyBranches {
+		e := wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.idle"}, uri)
+		if e == nil {
+			log.Printf("[broker] idle subscription URI=%s", uri)
+		}
 	}
 }
 
@@ -45,11 +88,10 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 			continue
 		}
 
-		// TODO clone request
 		route.EndpointID = subscription.ID
 		route.SubscriberID = subscriber.ID
 
-		e := subscriber.Say(request)
+		e := subscriber.Send(request)
 		if e == nil {
 			log.Printf(
 				"[broker] publication sent (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
@@ -67,7 +109,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 }
 
 func (broker *Broker) onLeave(peer *wamp.Peer) {
-	broker.subscriptions.CleanByAuthor(peer.ID)
+	broker.unsubscribe(peer.ID, "")
 	delete(broker.peers, peer.ID)
 	log.Printf("[broker] dettach peer (ID=%s)", peer.ID)
 }
@@ -89,28 +131,13 @@ func (broker *Broker) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) 
 	)
 }
 
-func (broker *Broker) Setup(
-	session *wamp.Session,
-	dealer *Dealer,
-) {
-	mount := func(
-		uri string,
-		options *wamp.SubscribeOptions,
-		procedure wamp.PublishEndpoint,
-	) {
-		subscription := wamp.Subscription{
-			ID: xid.New().String(),
-			URI: uri,
-			AuthorID: session.ID(),
-			Options: options,
-		}
-		broker.subscriptions.Add(&subscription)
-		session.Subscriptions[subscription.ID] = procedure
-	}
-
-	mount(
-		"wamp.session.new",
-		&wamp.SubscribeOptions{},
-		func(request wamp.PublishEvent) {},
-	)
+func (broker *Broker) Setup(dealer *Dealer) {
+	// mount := func(
+	// 	uri string,
+	// 	options *wamp.SubscribeOptions,
+	// 	procedure wamp.PublishEndpoint,
+	// ) {
+	// 	subscription, _ := broker.subscribe(uri, broker.session.ID(), options)
+	// 	broker.session.Subscriptions[subscription.ID] = procedure
+	// }
 }

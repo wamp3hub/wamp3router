@@ -3,23 +3,69 @@ package wamp3router
 import (
 	"errors"
 	"log"
+	"sort"
 
 	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
+
+	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
 type Dealer struct {
-	registrations *URIM[*wamp.RegisterOptions]
+	session       *wamp.Session
+	registrations *routerShared.URIM[*wamp.RegisterOptions]
 	peers         map[string]*wamp.Peer
-	counter       map[string]uint64
+	counter       map[string]int
 }
 
-func NewDealer(storage Storage) *Dealer {
+func NewDealer(
+	session *wamp.Session,
+	storage routerShared.Storage,
+) *Dealer {
 	return &Dealer{
-		NewURIM[*wamp.RegisterOptions](storage),
+		session,
+		routerShared.NewURIM[*wamp.RegisterOptions](storage),
 		make(map[string]*wamp.Peer),
-		make(map[string]uint64),
+		make(map[string]int),
+	}
+}
+
+func (dealer *Dealer) register(
+	uri string,
+	authorID string,
+	options *wamp.RegisterOptions,
+) (*wamp.Registration, error) {
+	isNew := dealer.registrations.Count(uri) == 0
+	registration := wamp.Registration{
+		ID:       xid.New().String(),
+		URI:      uri,
+		AuthorID: authorID,
+		Options:  options,
+	}
+	e := dealer.registrations.Add(&registration)
+	if e == nil {
+		if isNew {
+			e = wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.new"}, registration)
+			if e == nil {
+				log.Printf("[dealer] new registeration URI=%s", uri)
+			}
+		}
+		return &registration, nil
+	}
+	return nil, e
+}
+
+func (dealer *Dealer) unregister(
+	authorID string,
+	registrationID string,
+) {
+	emptyBranches := dealer.registrations.DeleteByAuthor(authorID, registrationID)
+	for _, uri := range emptyBranches {
+		e := wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.idle"}, uri)
+		if e == nil {
+			log.Printf("[dealer] idle registration URI=%s", uri)
+		}
 	}
 }
 
@@ -27,10 +73,10 @@ func (dealer *Dealer) onYield(
 	caller *wamp.Peer,
 	executor *wamp.Peer,
 	yieldEvent wamp.ReplyEvent,
-) (e error) {
+) wamp.ReplyEvent {
 	for yieldEvent.Kind() == wamp.MK_YIELD {
 		nextEventPromise, _ := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
-		e = caller.Say(yieldEvent)
+		e := caller.Send(yieldEvent)
 		if e == nil {
 			log.Printf(
 				"[dealer] generator yield (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
@@ -46,7 +92,7 @@ func (dealer *Dealer) onYield(
 			)
 
 			yieldEventPromise, _ := executor.PendingReplyEvents.New(nextEvent.ID(), wamp.DEFAULT_TIMEOUT)
-			e := executor.Say(nextEvent)
+			e := executor.Send(nextEvent)
 			if e == nil {
 				yieldEvent, done = <-yieldEventPromise
 				if done {
@@ -59,45 +105,53 @@ func (dealer *Dealer) onYield(
 		}
 	}
 
-	e = caller.Say(yieldEvent)
-	if e == nil {
-		log.Printf(
-			"[dealer] generator done (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-			caller.ID, executor.ID, yieldEvent.ID(),
-		)
-	}
-
 	log.Printf(
 		"[dealer] destroy generator (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
 		caller.ID, executor.ID, yieldEvent.ID(),
 	)
 
-	return e
+	return yieldEvent
 }
 
 func shift[T any](items []T, x int) []T {
 	return append(items[x:], items[:x]...)
 }
 
-func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error) {
+func (dealer *Dealer) matchRelative(uri string) routerShared.ResourceList[*wamp.RegisterOptions] {
+	registrationList := dealer.registrations.Match(uri)
+
+	n := len(registrationList)
+	if n > 0 {
+		sort.Slice(
+			registrationList,
+			func(i, j int) bool {
+				return registrationList[i].Options.Weight > registrationList[j].Options.Weight
+			},
+		)
+
+		offset := int(dealer.counter[uri]) % n
+		registrationList = shift(registrationList, offset)
+		dealer.counter[uri] += 1
+	}
+
+	return registrationList
+}
+
+func (dealer *Dealer) onCall(
+	caller *wamp.Peer,
+	request wamp.CallEvent,
+) error {
 	route := request.Route()
 	route.CallerID = caller.ID
 
 	features := request.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
-	registrationList := dealer.registrations.Match(features.URI)
-
-	n := len(registrationList)
-	if n > 0 {
-		offset := int(dealer.counter[features.URI]) % n
-		registrationList = shift(registrationList, offset)
-		dealer.counter[features.URI] += 1
-	}
+	registrationList := dealer.matchRelative(features.URI)
 
 	for _, registration := range registrationList {
-		executor, exists := dealer.peers[registration.AuthorID]
-		if !exists {
+		executor, found := dealer.peers[registration.AuthorID]
+		if !found {
 			log.Printf(
 				"[dealer] peer not found (URI=%s caller.ID=%s registration.ID=%s peer.ID=%s)",
 				features.URI, caller.ID, registration.ID, registration.AuthorID,
@@ -109,7 +163,7 @@ func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error
 		route.ExecutorID = executor.ID
 
 		replyEventPromise, _ := executor.PendingReplyEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
-		e = executor.Say(request)
+		e := executor.Send(request)
 		if e == nil {
 			log.Printf(
 				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
@@ -129,12 +183,12 @@ func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error
 				"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
 				features.URI, caller.ID, executor.ID, registration.ID,
 			)
-			response = wamp.NewErrorEvent(request, e)
+			response = wamp.NewErrorEvent(request, errors.New("TimedOut"))
 		} else if response.Kind() == wamp.MK_YIELD {
-			return dealer.onYield(caller, executor, response)
+			response = dealer.onYield(caller, executor, response)
 		}
 
-		e = caller.Say(response)
+		e = caller.Send(response)
 		if e == nil {
 			log.Printf(
 				"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
@@ -151,12 +205,12 @@ func (dealer *Dealer) onCall(caller *wamp.Peer, request wamp.CallEvent) (e error
 
 	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := wamp.NewErrorEvent(request, errors.New("ProcedureNotFound"))
-	e = caller.Say(response)
+	e := caller.Send(response)
 	return e
 }
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
-	dealer.registrations.CleanByAuthor(peer.ID)
+	dealer.unregister(peer.ID, "")
 	delete(dealer.peers, peer.ID)
 	log.Printf("[dealer] dettach peer (ID=%s)", peer.ID)
 }
@@ -178,23 +232,14 @@ func (dealer *Dealer) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) 
 	)
 }
 
-func (dealer *Dealer) Setup(
-	session *wamp.Session,
-	broker *Broker,
-) {
+func (dealer *Dealer) Setup(broker *Broker) {
 	mount := func(
 		uri string,
 		options *wamp.RegisterOptions,
 		procedure func(callEvent wamp.CallEvent) wamp.ReplyEvent,
 	) {
-		registration := wamp.Registration{
-			ID:       xid.New().String(),
-			URI:      uri,
-			AuthorID: session.ID(),
-			Options:  options,
-		}
-		dealer.registrations.Add(&registration)
-		session.Registrations[registration.ID] = procedure
+		registration, _ := dealer.register(uri, dealer.session.ID(), options)
+		dealer.session.Registrations[registration.ID] = procedure
 	}
 
 	mount(
@@ -204,23 +249,13 @@ func (dealer *Dealer) Setup(
 			route := callEvent.Route()
 			payload := new(wamp.NewResourcePayload[wamp.RegisterOptions])
 			e := callEvent.Payload(payload)
-			if e == nil {
-				if len(payload.URI) > 0 {
-					registration := wamp.Registration{
-						ID:       xid.New().String(),
-						URI:      payload.URI,
-						AuthorID: route.CallerID,
-						Options:  payload.Options,
-					}
-					e = dealer.registrations.Add(&registration)
-					if e == nil {
-						log.Printf("registration success Peer.ID=%s URI=%s", registration.AuthorID, registration.URI)
-						wamp.Publish(session, &wamp.PublishFeatures{URI: "wamp.registration.new"}, registration)
-						return wamp.NewReplyEvent(callEvent, registration)
-					}
-				} else {
-					e = errors.New("InvalidPayload")
+			if e == nil && len(payload.URI) > 0 {
+				registration, e := dealer.register(payload.URI, route.CallerID, payload.Options)
+				if e == nil {
+					return wamp.NewReplyEvent(callEvent, registration)
 				}
+			} else {
+				e = errors.New("InvalidPayload")
 			}
 			return wamp.NewErrorEvent(callEvent, e)
 		},
@@ -233,23 +268,13 @@ func (dealer *Dealer) Setup(
 			route := callEvent.Route()
 			payload := new(wamp.NewResourcePayload[wamp.SubscribeOptions])
 			e := callEvent.Payload(payload)
-			if e == nil {
-				if len(payload.URI) > 0 {
-					subscription := wamp.Subscription{
-						ID:       xid.New().String(),
-						URI:      payload.URI,
-						AuthorID: route.CallerID,
-						Options:  payload.Options,
-					}
-					e = broker.subscriptions.Add(&subscription)
-					if e == nil {
-						log.Printf("subscription success Peer.ID=%s URI=%s", subscription.AuthorID, subscription.URI)
-						wamp.Publish(session, &wamp.PublishFeatures{URI: "wamp.subscription.new"}, subscription)
-						return wamp.NewReplyEvent(callEvent, subscription)
-					} else {
-						e = errors.New("InvalidPayload")
-					}
+			if e == nil && len(payload.URI) > 0 {
+				subscription, e := broker.subscribe(payload.URI, route.CallerID, payload.Options)
+				if e == nil {
+					return wamp.NewReplyEvent(callEvent, subscription)
 				}
+			} else {
+				e = errors.New("InvalidPayload")
 			}
 			return wamp.NewErrorEvent(callEvent, e)
 		},
@@ -262,11 +287,9 @@ func (dealer *Dealer) Setup(
 			route := callEvent.Route()
 			registrationID := ""
 			e := callEvent.Payload(&registrationID)
-			if e == nil {
-				e = dealer.registrations.DeleteByAuthor(route.CallerID, registrationID)
-				if e == nil {
-					return wamp.NewReplyEvent(callEvent, true)
-				}
+			if e == nil && len(registrationID) > 0 {
+				dealer.unregister(route.CallerID, registrationID)
+				return wamp.NewReplyEvent(callEvent, struct{}{})
 			}
 			return wamp.NewErrorEvent(callEvent, e)
 		},
@@ -279,18 +302,16 @@ func (dealer *Dealer) Setup(
 			route := callEvent.Route()
 			subscriptionID := ""
 			e := callEvent.Payload(&subscriptionID)
-			if e == nil {
-				e = broker.subscriptions.DeleteByAuthor(route.CallerID, subscriptionID)
-				if e == nil {
-					return wamp.NewReplyEvent(callEvent, true)
-				}
+			if e == nil && len(subscriptionID) > 0 {
+				broker.unsubscribe(route.CallerID, subscriptionID)
+				return wamp.NewReplyEvent(callEvent, struct{}{})
 			}
 			return wamp.NewErrorEvent(callEvent, e)
 		},
 	)
 
 	mount(
-		"wamp.registration.uri.list",
+		"wamp.registration.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			URIList := dealer.registrations.DumpURIList()
@@ -299,7 +320,7 @@ func (dealer *Dealer) Setup(
 	)
 
 	mount(
-		"wamp.subscription.uri.list",
+		"wamp.subscription.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			URIList := broker.subscriptions.DumpURIList()

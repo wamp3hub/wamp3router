@@ -24,7 +24,7 @@ func NewURISegment[T any](parent *URISegment[T]) *URISegment[T] {
 
 type URISegmentList[T any] []*URISegment[T]
 
-func (segment *URISegment[T]) Get(path Path) URISegmentList[T] {
+func (segment *URISegment[T]) Match(path Path) URISegmentList[T] {
 	if len(path) == 0 {
 		return URISegmentList[T]{segment}
 	}
@@ -37,17 +37,32 @@ func (segment *URISegment[T]) Get(path Path) URISegmentList[T] {
 	key := path[0]
 	child, found := segment.Children[key]
 	if found {
-		subResult := child.Get(path[1:])
+		subResult := child.Match(path[1:])
 		result = append(result, subResult...)
 	}
 
 	child, found = segment.Children[WILD_CARD_SYMBOL]
 	if found {
-		subResult := child.Get(path[1:])
+		subResult := child.Match(path[1:])
 		result = append(result, subResult...)
 	}
 
 	return result
+}
+
+func (segment *URISegment[T]) Get(path Path) *URISegment[T] {
+	if len(path) == 0 {
+		return segment
+	}
+
+	key := path[0]
+
+	child, found := segment.Children[key]
+	if found {
+		return child.Get(path[1:])
+	}
+
+	return nil
 }
 
 func (segment *URISegment[T]) GetSert(path Path) *URISegment[T] {

@@ -32,7 +32,7 @@ func (storage *BoltDBStorage) Get(bucketName string, key string, data any) error
 	getRecord := func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(bucketName))
 		if bucket == nil {
-			return errors.New("RecordNotFound")
+			return errors.New("BucketNotFound")
 		}
 		raw := bucket.Get([]byte(key))
 		if len(raw) == 0 {
