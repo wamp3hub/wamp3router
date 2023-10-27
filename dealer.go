@@ -117,7 +117,9 @@ func shift[T any](items []T, x int) []T {
 	return append(items[x:], items[:x]...)
 }
 
-func (dealer *Dealer) matchRelative(uri string) routerShared.ResourceList[*wamp.RegisterOptions] {
+func (dealer *Dealer) matchRegistrations(
+	uri string,
+) routerShared.ResourceList[*wamp.RegisterOptions] {
 	registrationList := dealer.registrations.Match(uri)
 
 	n := len(registrationList)
@@ -147,7 +149,7 @@ func (dealer *Dealer) onCall(
 	features := request.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
-	registrationList := dealer.matchRelative(features.URI)
+	registrationList := dealer.matchRegistrations(features.URI)
 
 	for _, registration := range registrationList {
 		executor, found := dealer.peers[registration.AuthorID]
