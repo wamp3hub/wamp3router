@@ -1,4 +1,4 @@
-package wamp3router
+package shared
 
 import "testing"
 
