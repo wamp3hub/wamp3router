@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
@@ -38,5 +40,16 @@ func main() {
 	session := router.Initialize(peerID, consumeNewcomers, produceNewcomer, storage)
 
 	keyRing := routerShared.NewKeyRing()
+
+	now := time.Now()
+	claims := routerShared.JWTClaims{
+		Issuer:    session.ID(),
+		Subject:   xid.New().String(),
+		ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
+		IssuedAt:  jwt.NewNumericDate(now),
+	}
+	__ticket, _ := keyRing.JWTSign(&claims)
+	log.Printf("new cluster ticket %s", __ticket)
+
 	e = router.HTTPServe(session, keyRing, produceNewcomer, *address, true)
 }

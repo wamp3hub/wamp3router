@@ -12,6 +12,8 @@ import (
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
+type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
+
 type Dealer struct {
 	session       *wamp.Session
 	registrations *routerShared.URIM[*wamp.RegisterOptions]
@@ -31,21 +33,57 @@ func NewDealer(
 	}
 }
 
+func (dealer *Dealer) matchRegistrations(
+	uri string,
+) RegistrationList {
+	registrationList := dealer.registrations.Match(uri)
+
+	n := len(registrationList)
+	if n > 0 {
+		sort.Slice(
+			registrationList,
+			func(i, j int) bool {
+				return registrationList[i].Options.Distance > registrationList[j].Options.Distance
+			},
+		)
+
+		offset := dealer.counter[uri] % n
+		registrationList = shift(registrationList, offset)
+		dealer.counter[uri] += 1
+	}
+
+	return registrationList
+}
+
+func (dealer *Dealer) vertices(
+	uri string,
+) *routerShared.Set[string] {
+	vertices := routerShared.NewEmptySet[string]()
+	registrationList := dealer.registrations.Match(uri)
+	for _, registration := range registrationList {
+		vertex := registration.Options.Route[0]
+		vertices.Add(vertex)
+	}
+	return vertices
+}
+
 func (dealer *Dealer) register(
 	uri string,
 	authorID string,
 	options *wamp.RegisterOptions,
 ) (*wamp.Registration, error) {
-	isNew := dealer.registrations.Count(uri) == 0
+	options.Route = append(options.Route, dealer.session.ID())
 	registration := wamp.Registration{
 		ID:       xid.New().String(),
 		URI:      uri,
 		AuthorID: authorID,
 		Options:  options,
 	}
+	vertices := dealer.vertices(uri)
 	e := dealer.registrations.Add(&registration)
 	if e == nil {
-		if isNew {
+		vertex := options.Route[0]
+		if !vertices.Contains(vertex) {
 			e = wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.new"}, registration)
 			if e == nil {
 				log.Printf("[dealer] new registeration URI=%s", uri)
@@ -62,9 +100,9 @@ func (dealer *Dealer) unregister(
 ) {
 	emptyBranches := dealer.registrations.DeleteByAuthor(authorID, registrationID)
 	for _, uri := range emptyBranches {
-		e := wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.idle"}, uri)
+		e := wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.gone"}, uri)
 		if e == nil {
-			log.Printf("[dealer] idle registration URI=%s", uri)
+			log.Printf("[dealer] registration gone URI=%s", uri)
 		}
 	}
 }
@@ -117,34 +155,13 @@ func shift[T any](items []T, x int) []T {
 	return append(items[x:], items[:x]...)
 }
 
-func (dealer *Dealer) matchRegistrations(
-	uri string,
-) routerShared.ResourceList[*wamp.RegisterOptions] {
-	registrationList := dealer.registrations.Match(uri)
-
-	n := len(registrationList)
-	if n > 0 {
-		sort.Slice(
-			registrationList,
-			func(i, j int) bool {
-				return registrationList[i].Options.Weight > registrationList[j].Options.Weight
-			},
-		)
-
-		offset := int(dealer.counter[uri]) % n
-		registrationList = shift(registrationList, offset)
-		dealer.counter[uri] += 1
-	}
-
-	return registrationList
-}
-
 func (dealer *Dealer) onCall(
 	caller *wamp.Peer,
 	request wamp.CallEvent,
 ) error {
 	route := request.Route()
 	route.CallerID = caller.ID
+	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
 
 	features := request.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
@@ -189,6 +206,9 @@ func (dealer *Dealer) onCall(
 		} else if response.Kind() == wamp.MK_YIELD {
 			response = dealer.onYield(caller, executor, response)
 		}
+
+		replyFeatures := response.Features()
+		replyFeatures.VisitedRouters = append(replyFeatures.VisitedRouters, dealer.session.ID())
 
 		e = caller.Send(response)
 		if e == nil {
