@@ -38,3 +38,7 @@ func (set *Set[T]) Values() []T {
 	}
 	return result
 }
+
+func (set *Set[T]) Delete(k T) {
+	delete(set.values, k)
+}

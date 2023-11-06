@@ -18,7 +18,7 @@ type Storage interface {
 
 var URI_RE, _ = regexp.Compile(`^(\*{1,2}|[_0-9a-z]+)(\.(\*{1,2}|[_0-9a-z]+))*$`)
 
-func parseURI(v string) ([]string, error) {
+func ParseURI(v string) ([]string, error) {
 	if !URI_RE.MatchString(v) {
 		return nil, errors.New("InvalidURI")
 	}
@@ -44,7 +44,7 @@ type ResourceList[T any] []*wamp.Resource[T]
 // returns empty slice if something went wrong
 func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
-	path, e := parseURI(uri)
+	path, e := ParseURI(uri)
 	if e == nil {
 		for _, segment := range urim.root.Match(path) {
 			for _, resource := range segment.Data {
@@ -80,25 +80,20 @@ func (urim *URIM[T]) setByAuthor(ID string, newResourceList ResourceList[T]) err
 	return e
 }
 
-func (urim *URIM[T]) DeleteByAuthor(ID string, resourceID string) []string {
-	emptyBranches := []string{}
-
+func (urim *URIM[T]) DeleteByAuthor(ID string, resourceID string) ResourceList[T] {
 	shouldRemove := func(resource *wamp.Resource[T]) bool {
 		return len(resourceID) == 0 || resourceID == resource.ID
 	}
 
 	resourceList := urim.GetByAuthor(ID)
+	removedResourceList := ResourceList[T]{}
 	newResourceList := ResourceList[T]{}
 	for _, resource := range resourceList {
 		if shouldRemove(resource) {
-			path, _ := parseURI(resource.URI)
+			path, _ := ParseURI(resource.URI)
 			segment := urim.root.Get(path)
-			if segment != nil {
-				delete(segment.Data, resource.ID)
-				if segment.Empty() {
-					emptyBranches = append(emptyBranches, resource.URI)
-				}
-			}
+			delete(segment.Data, resource.ID)
+			removedResourceList = append(removedResourceList, resource)
 		} else {
 			newResourceList = append(newResourceList, resource)
 		}
@@ -109,11 +104,11 @@ func (urim *URIM[T]) DeleteByAuthor(ID string, resourceID string) []string {
 		log.Printf("[urim] setByAuthor %s", e)
 	}
 
-	return emptyBranches
+	return removedResourceList
 }
 
 func (urim *URIM[T]) Add(resource *wamp.Resource[T]) error {
-	path, e := parseURI(resource.URI)
+	path, e := ParseURI(resource.URI)
 	if e == nil {
 		resourceList := urim.GetByAuthor(resource.AuthorID)
 		newResourceList := append(resourceList, resource)

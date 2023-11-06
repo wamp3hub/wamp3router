@@ -43,7 +43,7 @@ func (dealer *Dealer) matchRegistrations(
 		sort.Slice(
 			registrationList,
 			func(i, j int) bool {
-				return registrationList[i].Options.Distance > registrationList[j].Options.Distance
+				return registrationList[i].Options.Distance() > registrationList[j].Options.Distance()
 			},
 		)
 
@@ -53,18 +53,6 @@ func (dealer *Dealer) matchRegistrations(
 	}
 
 	return registrationList
-}
-
-func (dealer *Dealer) vertices(
-	uri string,
-) *routerShared.Set[string] {
-	vertices := routerShared.NewEmptySet[string]()
-	registrationList := dealer.registrations.Match(uri)
-	for _, registration := range registrationList {
-		vertex := registration.Options.Route[0]
-		vertices.Add(vertex)
-	}
-	return vertices
 }
 
 func (dealer *Dealer) register(
@@ -79,15 +67,18 @@ func (dealer *Dealer) register(
 		AuthorID: authorID,
 		Options:  options,
 	}
-	vertices := dealer.vertices(uri)
 	e := dealer.registrations.Add(&registration)
 	if e == nil {
-		vertex := options.Route[0]
-		if !vertices.Contains(vertex) {
-			e = wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.new"}, registration)
-			if e == nil {
-				log.Printf("[dealer] new registeration URI=%s", uri)
-			}
+		e = wamp.Publish(
+			dealer.session, 
+			&wamp.PublishFeatures{
+				URI: "wamp.registration.new",
+				Exclude: []string{authorID},
+			}, 
+			registration,
+		)
+		if e == nil {
+			log.Printf("[dealer] new registeration URI=%s", uri)
 		}
 		return &registration, nil
 	}
@@ -98,11 +89,18 @@ func (dealer *Dealer) unregister(
 	authorID string,
 	registrationID string,
 ) {
-	emptyBranches := dealer.registrations.DeleteByAuthor(authorID, registrationID)
-	for _, uri := range emptyBranches {
-		e := wamp.Publish(dealer.session, &wamp.PublishFeatures{URI: "wamp.registration.gone"}, uri)
+	removedRegistrationList := dealer.registrations.DeleteByAuthor(authorID, registrationID)
+	for _, registration := range removedRegistrationList {
+		e := wamp.Publish(
+			dealer.session, 
+			&wamp.PublishFeatures{
+				URI: "wamp.registration.gone",
+				Exclude: []string{authorID},
+			}, 
+			registration.URI,
+		)
 		if e == nil {
-			log.Printf("[dealer] registration gone URI=%s", uri)
+			log.Printf("[dealer] registration gone URI=%s", registration.URI)
 		}
 	}
 }

@@ -26,7 +26,7 @@ func WebsocketMount(
 
 	// creates websocket connection
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[websocket] new upgrade request (ip=%s)", r.RemoteAddr)
+		log.Printf("[http2-websocket] new upgrade request (ip=%s)", r.RemoteAddr)
 		query := r.URL.Query()
 		ticket := query.Get("ticket")
 		claims, e := keyRing.JWTParse(ticket)
@@ -39,16 +39,16 @@ func WebsocketMount(
 				__transport := wampTransport.WSTransport(wampSerializer.DefaultSerializer, connection)
 				peer := wamp.SpawnPeer(claims.Subject, __transport)
 				produceNewcomers(peer)
-				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
+				log.Printf("[http2-websocket] new peer (ID=%s)", peer.ID)
 			} else {
-				log.Printf("[websocket] %s", e)
+				log.Printf("[http2-websocket] %s", e)
 			}
 		} else {
 			writeJSONBody(w, 400, e)
 		}
 	}
 
-	log.Print("[websocket] up...")
+	log.Print("[http2-websocket] up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", onWebsocketUpgrade)
 	return serveMux

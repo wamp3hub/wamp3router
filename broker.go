@@ -36,18 +36,6 @@ func (broker *Broker) matchSubscriptions(
 	return subscriptionList
 }
 
-func (broker *Broker) vertices(
-	uri string,
-) *routerShared.Set[string] {
-	vertices := routerShared.NewEmptySet[string]()
-	subscriptionList := broker.subscriptions.Match(uri)
-	for _, subscription := range subscriptionList {
-		vertex := subscription.Options.Route[0]
-		vertices.Add(vertex)
-	}
-	return vertices
-}
-
 func (broker *Broker) subscribe(
 	uri string,
 	authorID string,
@@ -60,15 +48,18 @@ func (broker *Broker) subscribe(
 		AuthorID: authorID,
 		Options:  options,
 	}
-	vertices := broker.vertices(uri)
 	e := broker.subscriptions.Add(&subscription)
 	if e == nil {
-		vertex := options.Route[0]
-		if !vertices.Contains(vertex) {
-			e = wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.new"}, subscription)
-			if e == nil {
-				log.Printf("[broker] new subscription URI=%s", uri)
-			}
+		e = wamp.Publish(
+			broker.session,
+			&wamp.PublishFeatures{
+				URI: "wamp.subscription.new",
+				Exclude: []string{authorID},
+			},
+			subscription,
+		)
+		if e == nil {
+			log.Printf("[broker] new subscription URI=%s", uri)
 		}
 		return &subscription, nil
 	}
@@ -79,11 +70,18 @@ func (broker *Broker) unsubscribe(
 	authorID string,
 	subscriptionID string,
 ) {
-	emptyBranches := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
-	for _, uri := range emptyBranches {
-		e := wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.gone"}, uri)
+	removedSubscriptionList := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
+	for _, subscription := range removedSubscriptionList {
+		e := wamp.Publish(
+			broker.session,
+			&wamp.PublishFeatures{
+				URI: "wamp.subscription.gone",
+				Exclude: []string{authorID},
+			},
+			subscription.URI,
+		)
 		if e == nil {
-			log.Printf("[broker] subscription gone URI=%s", uri)
+			log.Printf("[broker] subscription gone URI=%s", subscription.URI)
 		}
 	}
 }

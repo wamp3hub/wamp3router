@@ -47,16 +47,16 @@ func InterviewMount(session *wamp.Session, keyRing *routerShared.KeyRing) http.H
 						YourID:   claims.Subject,
 						Ticket:   ticket,
 					}
-					log.Printf("[interview] success (peer.ID=%s)", responsePayload.YourID)
+					log.Printf("[http2-interview] success (peer.ID=%s)", responsePayload.YourID)
 					return 200, responsePayload
 				}
 			}
 		}
-		log.Printf("[interview] error=%s", e)
+		log.Printf("[http2-interview] error=%s", e)
 		return 400, e
 	}
 
-	log.Print("[interview] up...")
+	log.Print("[http2-interview] up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", jsonEndpoint(onInterview))
 	return serveMux
