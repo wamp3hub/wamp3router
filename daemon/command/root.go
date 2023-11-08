@@ -3,8 +3,8 @@ package command
 import (
 	"github.com/spf13/cobra"
 
+	generateTicket "github.com/wamp3hub/wamp3router/daemon/command/generate"
 	"github.com/wamp3hub/wamp3router/daemon/command/run"
-	"github.com/wamp3hub/wamp3router/daemon/command/ticket"
 )
 
 var Command = &cobra.Command{
@@ -14,7 +14,7 @@ var Command = &cobra.Command{
 
 func init() {
 	Command.AddCommand(run.Command)
-	Command.AddCommand(ticket.Command)
+	Command.AddCommand(generateTicket.Command)
 }
 
 func Execute() {

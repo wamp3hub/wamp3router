@@ -17,7 +17,7 @@ import (
 	routerStorages "github.com/wamp3hub/wamp3router/storages"
 )
 
-func Run(
+func run(
 	routerID string,
 	http2address string,
 	enableWebsocket bool,
@@ -87,7 +87,7 @@ var (
 		Use:   "run",
 		Short: "Run new instance of Router",
 		Run: func(cmd *cobra.Command, args []string) {
-			Run(
+			run(
 				*routerIDFlag,
 				*http2addressFlag,
 				*enableWebsocketFlag,
