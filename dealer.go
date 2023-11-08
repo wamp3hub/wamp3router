@@ -1,11 +1,10 @@
-package wamp3router
+package router
 
 import (
 	"errors"
 	"log"
 	"sort"
 
-	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
@@ -33,6 +32,56 @@ func NewDealer(
 	}
 }
 
+func (dealer *Dealer) register(
+	uri string,
+	authorID string,
+	options *wamp.RegisterOptions,
+) (*wamp.Registration, error) {
+	options.Route = append(options.Route, dealer.session.ID())
+	registration := wamp.Registration{
+		ID:       wampShared.NewID(),
+		URI:      uri,
+		AuthorID: authorID,
+		Options:  options,
+	}
+	e := dealer.registrations.Add(&registration)
+	if e == nil {
+		e = wamp.Publish(
+			dealer.session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.registration.new",
+				Exclude: []string{authorID},
+			},
+			registration,
+		)
+		if e == nil {
+			log.Printf("[dealer] new registeration URI=%s", uri)
+		}
+		return &registration, nil
+	}
+	return nil, e
+}
+
+func (dealer *Dealer) unregister(
+	authorID string,
+	registrationID string,
+) {
+	removedRegistrationList := dealer.registrations.DeleteByAuthor(authorID, registrationID)
+	for _, registration := range removedRegistrationList {
+		e := wamp.Publish(
+			dealer.session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.registration.gone",
+				Exclude: []string{authorID},
+			},
+			registration.URI,
+		)
+		if e == nil {
+			log.Printf("[dealer] registration gone URI=%s", registration.URI)
+		}
+	}
+}
+
 func (dealer *Dealer) matchRegistrations(
 	uri string,
 ) RegistrationList {
@@ -53,56 +102,6 @@ func (dealer *Dealer) matchRegistrations(
 	}
 
 	return registrationList
-}
-
-func (dealer *Dealer) register(
-	uri string,
-	authorID string,
-	options *wamp.RegisterOptions,
-) (*wamp.Registration, error) {
-	options.Route = append(options.Route, dealer.session.ID())
-	registration := wamp.Registration{
-		ID:       xid.New().String(),
-		URI:      uri,
-		AuthorID: authorID,
-		Options:  options,
-	}
-	e := dealer.registrations.Add(&registration)
-	if e == nil {
-		e = wamp.Publish(
-			dealer.session, 
-			&wamp.PublishFeatures{
-				URI: "wamp.registration.new",
-				Exclude: []string{authorID},
-			}, 
-			registration,
-		)
-		if e == nil {
-			log.Printf("[dealer] new registeration URI=%s", uri)
-		}
-		return &registration, nil
-	}
-	return nil, e
-}
-
-func (dealer *Dealer) unregister(
-	authorID string,
-	registrationID string,
-) {
-	removedRegistrationList := dealer.registrations.DeleteByAuthor(authorID, registrationID)
-	for _, registration := range removedRegistrationList {
-		e := wamp.Publish(
-			dealer.session, 
-			&wamp.PublishFeatures{
-				URI: "wamp.registration.gone",
-				Exclude: []string{authorID},
-			}, 
-			registration.URI,
-		)
-		if e == nil {
-			log.Printf("[dealer] registration gone URI=%s", registration.URI)
-		}
-	}
 }
 
 func (dealer *Dealer) onYield(

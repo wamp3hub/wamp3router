@@ -1,4 +1,4 @@
-package storage
+package routerStorages
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 )
 
 type BoltDBStorage struct {
-	db *bolt.DB
+	super *bolt.DB
 }
 
 func NewBoltDBStorage(path string) (*BoltDBStorage, error) {
@@ -18,12 +18,12 @@ func NewBoltDBStorage(path string) (*BoltDBStorage, error) {
 		return nil, e
 	}
 
-	storage := &BoltDBStorage{db: db}
+	storage := &BoltDBStorage{super: db}
 	return storage, nil
 }
 
 func (storage *BoltDBStorage) Destroy() error {
-	e := storage.db.Close()
+	e := storage.super.Close()
 	// TODO log error
 	return e
 }
@@ -42,7 +42,7 @@ func (storage *BoltDBStorage) Get(bucketName string, key string, data any) error
 		return e
 	}
 
-	e := storage.db.View(getRecord)
+	e := storage.super.View(getRecord)
 	// TODO log error
 	return e
 }
@@ -65,7 +65,7 @@ func (storage *BoltDBStorage) Set(bucketName string, key string, data any) error
 		return e
 	}
 
-	e = storage.db.Update(putRecord)
+	e = storage.super.Update(putRecord)
 	// TODO log error
 	return e
 }
@@ -79,6 +79,6 @@ func (storage *BoltDBStorage) Delete(bucketName string, key string) {
 		return nil
 	}
 
-	storage.db.Update(deleteRecord)
+	storage.super.Update(deleteRecord)
 	// TODO log error
 }

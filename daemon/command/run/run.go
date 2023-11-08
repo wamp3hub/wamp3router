@@ -1,95 +1,114 @@
 package run
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/rs/xid"
 	"github.com/spf13/cobra"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	wampTransport "github.com/wamp3hub/wamp3go/transport"
+	wampTransports "github.com/wamp3hub/wamp3go/transports"
 
 	router "github.com/wamp3hub/wamp3router"
-	routerServer "github.com/wamp3hub/wamp3router/server"
+	routerServers "github.com/wamp3hub/wamp3router/servers"
 	routerShared "github.com/wamp3hub/wamp3router/shared"
-	routerStorage "github.com/wamp3hub/wamp3router/storage"
+	routerStorages "github.com/wamp3hub/wamp3router/storages"
 )
 
-func HTTPServe(
-	session *wamp.Session,
-	keyRing *routerShared.KeyRing,
-	produceNewcomer wampShared.Producible[*wamp.Peer],
-	address string,
+func Run(
+	routerID string,
+	http2address string,
 	enableWebsocket bool,
-) error {
-	http.Handle("/wamp3/interview", routerServer.InterviewMount(session, keyRing))
-	if enableWebsocket {
-		http.Handle("/wamp3/websocket", routerServer.WebsocketMount(keyRing, produceNewcomer))
-	}
-
-	log.Printf("[router] Starting at %s", address)
-	e := http.ListenAndServe(address, nil)
-	return e
-}
-
-func Serve(
-	address string,
+	unixPath string,
+	storageClass string,
 	storagePath string,
+	debug bool,
 ) {
 	log.SetFlags(0)
 
-	storage, e := routerStorage.NewBoltDBStorage(storagePath)
+	storage, e := routerStorages.NewBoltDBStorage(storagePath)
 	if e != nil {
 		panic("failed to initialize storage")
 	}
-	defer storage.Destroy()
 
 	consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
-	defer closeNewcomers()
 
-	peerID := xid.New().String()
-
-	alphaTransport, betaTransport := wampTransport.NewDuplexLocalTransport(128)
-	alphaPeer := wamp.SpawnPeer(peerID, alphaTransport)
-	betaPeer := wamp.SpawnPeer(peerID, betaTransport)
-	session := wamp.NewSession(alphaPeer)
+	alphaTransport, betaTransport := wampTransports.NewDuplexLocalTransport(128)
+	alphaPeer := wamp.SpawnPeer(routerID, alphaTransport)
+	betaPeer := wamp.SpawnPeer(routerID, betaTransport)
+	session := wamp.NewSession(betaPeer)
 
 	router.Serve(session, storage, consumeNewcomers)
 
-	produceNewcomer(betaPeer)
-
-	// go routerServer.UnixMount("/tmp/wamp-cli.socket", produceNewcomer)
+	produceNewcomer(alphaPeer)
 
 	keyRing := routerShared.NewKeyRing()
 
-	now := time.Now()
-	claims := routerShared.JWTClaims{
-		Issuer:    session.ID(),
-		Subject:   xid.New().String(),
-		ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
-		IssuedAt:  jwt.NewNumericDate(now),
+	http2server := routerServers.HTTP2Server{
+		EnableWebsocket: enableWebsocket,
+		Address:         http2address,
+		Session:         session,
+		KeyRing:         keyRing,
+		ProduceNewcomer: produceNewcomer,
 	}
-	__ticket, _ := keyRing.JWTSign(&claims)
-	log.Printf("new cluster ticket %s", __ticket)
+	unixServer := routerServers.UnixServer{
+		Path: unixPath,
+		Session: session,
+		KeyRing: keyRing,
+		ProduceNewcomer: produceNewcomer,
+	}
 
-	e = HTTPServe(session, keyRing, produceNewcomer, address, true)
+	go http2server.Serve()
+	go unixServer.Serve()
+
+	exitSignal := make(chan os.Signal, 1)
+	signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
+
+	<-exitSignal
+	log.Printf("Gracefully shutting down...")
+	http2server.Shutdown()
+	unixServer.Shutdown()
+	closeNewcomers()
+	storage.Destroy()
+	log.Printf("Shutdown complete")
 }
 
-var Command = &cobra.Command{
-	Use:   "run",
-	Short: "Run",
-	Run: func(cmd *cobra.Command, args []string) {
-		pid := os.Getpid()
-		storagePath := "/tmp/wamp3router" + fmt.Sprint(pid) + ".db"
-		address := ":8889"
-		Serve(address, storagePath)
-	},
-}
+var (
+	routerIDFlag        *string
+	http2addressFlag    *string
+	enableWebsocketFlag *bool
+	unixPathFlag        *string
+	storageClassFlag    *string
+	storagePathFlag     *string
+	debugFlag           *bool
+	Command             = &cobra.Command{
+		Use:   "run",
+		Short: "Run new instance of Router",
+		Run: func(cmd *cobra.Command, args []string) {
+			Run(
+				*routerIDFlag,
+				*http2addressFlag,
+				*enableWebsocketFlag,
+				*unixPathFlag,
+				*storageClassFlag,
+				*storagePathFlag,
+				*debugFlag,
+			)
+		},
+	}
+)
 
 func init() {
+	defaultRouterID := wampShared.NewID()
+	defaultUnixPath := "/tmp/wamp3rd-" + defaultRouterID + ".socket"
+	defaultStoragePath := "/tmp/wamp3rd-" + defaultRouterID + ".db"
+	routerIDFlag = Command.Flags().String("id", defaultRouterID, "router id")
+	http2addressFlag = Command.Flags().String("http2address", ":8888", "http2 address")
+	enableWebsocketFlag = Command.Flags().Bool("websocket", true, "enable websocket")
+	unixPathFlag = Command.Flags().String("unix-path", defaultUnixPath, "unix socket path")
+	storageClassFlag = Command.Flags().String("storage-class", "BoltDB", "storage class")
+	storagePathFlag = Command.Flags().String("storage-path", defaultStoragePath, "storage path")
+	debugFlag = Command.Flags().Bool("debug", false, "enable debug")
 }

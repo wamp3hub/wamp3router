@@ -1,13 +1,17 @@
-package wamp3router
+package router
 
 import (
 	"log"
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
+
+type Server interface {
+	Serve() error
+	Shutdown() error
+}
 
 func Serve(
 	session *wamp.Session,

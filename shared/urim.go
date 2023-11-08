@@ -1,4 +1,4 @@
-package shared
+package routerShared
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
 )
 
 type Storage interface {
@@ -28,12 +29,14 @@ func ParseURI(v string) ([]string, error) {
 }
 
 type URIM[T any] struct {
+	bucket  string
 	root    *URISegment[*wamp.Resource[T]]
 	storage Storage
 }
 
 func NewURIM[T any](storage Storage) *URIM[T] {
 	return &URIM[T]{
+		wampShared.NewID(),
 		NewURISegment[*wamp.Resource[T]](nil),
 		storage,
 	}
@@ -63,7 +66,7 @@ func (urim *URIM[T]) Count(uri string) int {
 // returns empty slice if something went wrong
 func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
-	e := urim.storage.Get("resources", ID, &resourceList)
+	e := urim.storage.Get(urim.bucket, ID, &resourceList)
 	if e != nil {
 		log.Printf("[urim] GetByAuthor %s", e)
 	}
@@ -72,11 +75,11 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 
 func (urim *URIM[T]) setByAuthor(ID string, newResourceList ResourceList[T]) error {
 	if len(newResourceList) == 0 {
-		urim.storage.Delete("resources", ID)
+		urim.storage.Delete(urim.bucket, ID)
 		return nil
 	}
 
-	e := urim.storage.Set("resources", ID, newResourceList)
+	e := urim.storage.Set(urim.bucket, ID, newResourceList)
 	return e
 }
 

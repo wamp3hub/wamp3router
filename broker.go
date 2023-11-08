@@ -1,9 +1,8 @@
-package wamp3router
+package router
 
 import (
 	"log"
 
-	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
@@ -29,13 +28,6 @@ func NewBroker(
 	}
 }
 
-func (broker *Broker) matchSubscriptions(
-	uri string,
-) SubscriptionList {
-	subscriptionList := broker.subscriptions.Match(uri)
-	return subscriptionList
-}
-
 func (broker *Broker) subscribe(
 	uri string,
 	authorID string,
@@ -43,7 +35,7 @@ func (broker *Broker) subscribe(
 ) (*wamp.Subscription, error) {
 	options.Route = append(options.Route, broker.session.ID())
 	subscription := wamp.Subscription{
-		ID:       xid.New().String(),
+		ID:       wampShared.NewID(),
 		URI:      uri,
 		AuthorID: authorID,
 		Options:  options,
@@ -53,7 +45,7 @@ func (broker *Broker) subscribe(
 		e = wamp.Publish(
 			broker.session,
 			&wamp.PublishFeatures{
-				URI: "wamp.subscription.new",
+				URI:     "wamp.subscription.new",
 				Exclude: []string{authorID},
 			},
 			subscription,
@@ -75,7 +67,7 @@ func (broker *Broker) unsubscribe(
 		e := wamp.Publish(
 			broker.session,
 			&wamp.PublishFeatures{
-				URI: "wamp.subscription.gone",
+				URI:     "wamp.subscription.gone",
 				Exclude: []string{authorID},
 			},
 			subscription.URI,
@@ -84,6 +76,13 @@ func (broker *Broker) unsubscribe(
 			log.Printf("[broker] subscription gone URI=%s", subscription.URI)
 		}
 	}
+}
+
+func (broker *Broker) matchSubscriptions(
+	uri string,
+) SubscriptionList {
+	subscriptionList := broker.subscriptions.Match(uri)
+	return subscriptionList
 }
 
 func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) (e error) {
