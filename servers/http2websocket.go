@@ -1,4 +1,4 @@
-package server
+package routerServers
 
 import (
 	"log"
@@ -7,14 +7,14 @@ import (
 	"github.com/gorilla/websocket"
 
 	wamp "github.com/wamp3hub/wamp3go"
-	wampSerializer "github.com/wamp3hub/wamp3go/serializer"
+	wampSerializers "github.com/wamp3hub/wamp3go/serializers"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	wampTransport "github.com/wamp3hub/wamp3go/transport"
+	wampTransports "github.com/wamp3hub/wamp3go/transports"
 
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
-func WebsocketMount(
+func http2websocketMount(
 	keyRing *routerShared.KeyRing,
 	produceNewcomers wampShared.Producible[*wamp.Peer],
 ) http.Handler {
@@ -26,7 +26,7 @@ func WebsocketMount(
 
 	// creates websocket connection
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[websocket] new upgrade request (ip=%s)", r.RemoteAddr)
+		log.Printf("[http2-websocket] new upgrade request (ip=%s)", r.RemoteAddr)
 		query := r.URL.Query()
 		ticket := query.Get("ticket")
 		claims, e := keyRing.JWTParse(ticket)
@@ -36,19 +36,19 @@ func WebsocketMount(
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
 				// serializerCode := query.Get("serializer")
-				__transport := wampTransport.WSTransport(wampSerializer.DefaultSerializer, connection)
+				__transport := wampTransports.WSTransport(wampSerializers.DefaultSerializer, connection)
 				peer := wamp.SpawnPeer(claims.Subject, __transport)
 				produceNewcomers(peer)
-				log.Printf("[websocket] new peer (ID=%s)", peer.ID)
+				log.Printf("[http2-websocket] new peer (ID=%s)", peer.ID)
 			} else {
-				log.Printf("[websocket] %s", e)
+				log.Printf("[http2-websocket] %s", e)
 			}
 		} else {
 			writeJSONBody(w, 400, e)
 		}
 	}
 
-	log.Print("[websocket] up...")
+	log.Print("[http2-websocket] up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", onWebsocketUpgrade)
 	return serveMux

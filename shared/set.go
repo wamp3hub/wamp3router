@@ -1,4 +1,4 @@
-package shared
+package routerShared
 
 type Emptiness struct{}
 
@@ -37,4 +37,8 @@ func (set *Set[T]) Values() []T {
 		result = append(result, v)
 	}
 	return result
+}
+
+func (set *Set[T]) Delete(k T) {
+	delete(set.values, k)
 }

@@ -1,14 +1,15 @@
-package wamp3router
+package router
 
 import (
 	"log"
 
-	"github.com/rs/xid"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
+
+type SubscriptionList = routerShared.ResourceList[*wamp.SubscribeOptions]
 
 type Broker struct {
 	session       *wamp.Session
@@ -32,20 +33,25 @@ func (broker *Broker) subscribe(
 	authorID string,
 	options *wamp.SubscribeOptions,
 ) (*wamp.Subscription, error) {
-	isNew := broker.subscriptions.Count(uri) == 0
+	options.Route = append(options.Route, broker.session.ID())
 	subscription := wamp.Subscription{
-		ID:       xid.New().String(),
+		ID:       wampShared.NewID(),
 		URI:      uri,
 		AuthorID: authorID,
 		Options:  options,
 	}
 	e := broker.subscriptions.Add(&subscription)
 	if e == nil {
-		if isNew {
-			e = wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.new"}, subscription)
-			if e == nil {
-				log.Printf("[broker] new subscription URI=%s", uri)
-			}
+		e = wamp.Publish(
+			broker.session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.subscription.new",
+				Exclude: []string{authorID},
+			},
+			subscription,
+		)
+		if e == nil {
+			log.Printf("[broker] new subscription URI=%s", uri)
 		}
 		return &subscription, nil
 	}
@@ -56,24 +62,42 @@ func (broker *Broker) unsubscribe(
 	authorID string,
 	subscriptionID string,
 ) {
-	emptyBranches := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
-	for _, uri := range emptyBranches {
-		e := wamp.Publish(broker.session, &wamp.PublishFeatures{URI: "wamp.subscription.idle"}, uri)
+	removedSubscriptionList := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
+	for _, subscription := range removedSubscriptionList {
+		e := wamp.Publish(
+			broker.session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.subscription.gone",
+				Exclude: []string{authorID},
+			},
+			subscription.URI,
+		)
 		if e == nil {
-			log.Printf("[broker] idle subscription URI=%s", uri)
+			log.Printf("[broker] subscription gone URI=%s", subscription.URI)
 		}
 	}
+}
+
+func (broker *Broker) matchSubscriptions(
+	uri string,
+) SubscriptionList {
+	subscriptionList := broker.subscriptions.Match(uri)
+	return subscriptionList
 }
 
 func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) (e error) {
 	route := request.Route()
 	route.PublisherID = publisher.ID
+	route.VisitedRouters = append(route.VisitedRouters, broker.session.ID())
+
 	features := request.Features()
 	log.Printf("[broker] publish (peer.ID=%s URI=%s)", publisher.ID, features.URI)
 
 	// includeSet := NewSet(features.Include)
 	excludeSet := routerShared.NewSet(features.Exclude)
-	subscriptionList := broker.subscriptions.Match(features.URI)
+
+	subscriptionList := broker.matchSubscriptions(features.URI)
+
 	for _, subscription := range subscriptionList {
 		if excludeSet.Contains(subscription.AuthorID) {
 			continue

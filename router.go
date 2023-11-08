@@ -1,31 +1,24 @@
-package wamp3router
+package router
 
 import (
 	"log"
-	"net/http"
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	wampTransport "github.com/wamp3hub/wamp3go/transport"
-
-	routerServer "github.com/wamp3hub/wamp3router/server"
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
-// Creates new instance of `wamp.Session`
-// Where session represents router
-func Initialize(
-	peerID string,
-	consumeNewcomers wampShared.Consumable[*wamp.Peer],
-	produceNewcomer wampShared.Producible[*wamp.Peer],
-	storage routerShared.Storage,
-) *wamp.Session {
-	log.Printf("[router] up...")
+type Server interface {
+	Serve() error
+	Shutdown() error
+}
 
-	alphaTransport, betaTransport := wampTransport.NewDuplexLocalTransport(128)
-	alphaPeer := wamp.SpawnPeer(peerID, alphaTransport)
-	betaPeer := wamp.SpawnPeer(peerID, betaTransport)
-	session := wamp.NewSession(alphaPeer)
+func Serve(
+	session *wamp.Session,
+	storage routerShared.Storage,
+	consumeNewcomers wampShared.Consumable[*wamp.Peer],
+) {
+	log.Printf("[router] up...")
 
 	broker := NewBroker(session, storage)
 	dealer := NewDealer(session, storage)
@@ -41,27 +34,7 @@ func Initialize(
 		},
 		func() { log.Printf("[router] down...") },
 	)
+
 	broker.Serve(consumeNewcomers)
 	dealer.Serve(consumeNewcomers)
-
-	produceNewcomer(betaPeer)
-
-	return session
-}
-
-func HTTPServe(
-	session *wamp.Session,
-	keyRing *routerShared.KeyRing,
-	produceNewcomer wampShared.Producible[*wamp.Peer],
-	address string,
-	enableWebsocket bool,
-) error {
-	http.Handle("/wamp3/interview", routerServer.InterviewMount(session, keyRing))
-	if enableWebsocket {
-		http.Handle("/wamp3/websocket", routerServer.WebsocketMount(keyRing, produceNewcomer))
-	}
-
-	log.Printf("[router] Starting at %s", address)
-	e := http.ListenAndServe(address, nil)
-	return e
 }

@@ -1,4 +1,4 @@
-package shared
+package routerShared
 
 import (
 	"crypto/rand"

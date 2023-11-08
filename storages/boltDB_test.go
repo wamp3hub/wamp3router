@@ -1,13 +1,13 @@
-package storage
+package routerStorages
 
 import (
 	"testing"
 
-	"github.com/rs/xid"
+	"github.com/wamp3hub/wamp3go/shared"
 )
 
 func TestHappyPathBoltDB(t *testing.T) {
-	path := "/tmp/" + xid.New().String() + ".db"
+	path := "/tmp/" + wampShared.NewID() + ".db"
 	storage, e := NewBoltDBStorage(path)
 	if e != nil {
 		t.Fatal(e)

@@ -1,4 +1,4 @@
-package shared
+package routerShared
 
 import (
 	"crypto/rsa"
@@ -15,7 +15,20 @@ func JWTSign(key *rsa.PrivateKey, claims *JWTClaims) (string, error) {
 	return ticket, e
 }
 
-func JWTParse(key *rsa.PublicKey, ticket string) (*JWTClaims, error) {
+func jwtJustParse(ticket string) (*JWTClaims, error) {
+	jwtParser := jwt.NewParser()
+	jwtoken, _, e := jwtParser.ParseUnverified(ticket, new(JWTClaims))
+	if e == nil {
+		claims, ok := jwtoken.Claims.(*JWTClaims)
+		if ok {
+			return claims, nil
+		}
+		e = errors.New("UnexpectedJWTClaims")
+	}
+	return nil, e
+}
+
+func jwtVerifyParse(key *rsa.PublicKey, ticket string) (*JWTClaims, error) {
 	jwtoken, e := jwt.ParseWithClaims(
 		ticket,
 		new(JWTClaims),
@@ -27,7 +40,6 @@ func JWTParse(key *rsa.PublicKey, ticket string) (*JWTClaims, error) {
 			return nil, errors.New("UnexpectedSigningMethod")
 		},
 	)
-
 	if e == nil {
 		claims, ok := jwtoken.Claims.(*JWTClaims)
 		if ok {
@@ -36,4 +48,12 @@ func JWTParse(key *rsa.PublicKey, ticket string) (*JWTClaims, error) {
 		e = errors.New("UnexpectedJWTClaims")
 	}
 	return nil, e
+}
+
+func JWTParse(key *rsa.PublicKey, ticket string) (*JWTClaims, error) {
+	if key == nil {
+		return jwtJustParse(ticket)
+	}
+
+	return jwtVerifyParse(key, ticket)
 }

@@ -1,10 +1,10 @@
-package shared
+package routerShared
 
 import (
-	"testing"
 	"strings"
+	"testing"
 
-	"github.com/rs/xid"
+	"github.com/wamp3hub/wamp3go/shared"
 )
 
 func insertResource[T any](root *URISegment[T], path Path, resourceID string, data T) {
@@ -21,7 +21,7 @@ func TestDump(t *testing.T) {
 	root := NewURISegment[Emptiness](nil)
 
 	temporaryResourcePath := Path{"wamp", "test"}
-	temporaryResourceID := xid.New().String()
+	temporaryResourceID := wampShared.NewID()
 	insertResource(root, temporaryResourcePath, temporaryResourceID, Emptiness{})
 	deleteResource(root, temporaryResourcePath, temporaryResourceID)
 
@@ -30,7 +30,7 @@ func TestDump(t *testing.T) {
 		Path{"wamp", "registration", "new"},
 	}
 	for _, path := range expectedPathList {
-		insertResource(root, path, xid.New().String(), Emptiness{})
+		insertResource(root, path, wampShared.NewID(), Emptiness{})
 	}
 
 	pathDump := root.PathDump()
