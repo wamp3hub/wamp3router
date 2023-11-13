@@ -17,7 +17,8 @@ import (
 	routerStorages "github.com/wamp3hub/wamp3router/storages"
 )
 
-func run(
+func Run(
+	keyRing *routerShared.KeyRing,
 	routerID string,
 	http2address string,
 	enableWebsocket bool,
@@ -35,16 +36,14 @@ func run(
 
 	consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
 
-	alphaTransport, betaTransport := wampTransports.NewDuplexLocalTransport(128)
-	alphaPeer := wamp.SpawnPeer(routerID, alphaTransport)
-	betaPeer := wamp.SpawnPeer(routerID, betaTransport)
-	session := wamp.NewSession(betaPeer)
+	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
+	lPeer := wamp.SpawnPeer(routerID, lTransport)
+	rPeer := wamp.SpawnPeer(routerID, rTransport)
+	session := wamp.NewSession(rPeer)
 
 	router.Serve(session, storage, consumeNewcomers)
 
-	produceNewcomer(alphaPeer)
-
-	keyRing := routerShared.NewKeyRing()
+	produceNewcomer(lPeer)
 
 	http2server := routerServers.HTTP2Server{
 		EnableWebsocket: enableWebsocket,
@@ -87,7 +86,10 @@ var (
 		Use:   "run",
 		Short: "Run new instance of Router",
 		Run: func(cmd *cobra.Command, args []string) {
-			run(
+			keyRing := routerShared.NewKeyRing()
+
+			Run(
+				keyRing,
 				*routerIDFlag,
 				*http2addressFlag,
 				*enableWebsocketFlag,

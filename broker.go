@@ -123,8 +123,8 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 			)
 		} else {
 			log.Printf(
-				"[broker] subscriber did not accept (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
-				features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
+				"[broker] publication send error=%s (URI=%s publisher.ID=%s subscriber.ID=%s subscription.ID=%s)",
+				e, features.URI, publisher.ID, subscription.AuthorID, subscription.ID,
 			)
 		}
 	}

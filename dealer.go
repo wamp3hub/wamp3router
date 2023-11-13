@@ -107,7 +107,7 @@ func (dealer *Dealer) matchRegistrations(
 func (dealer *Dealer) onYield(
 	caller *wamp.Peer,
 	executor *wamp.Peer,
-	yieldEvent wamp.ReplyEvent,
+	yieldEvent wamp.YieldEvent,
 ) wamp.ReplyEvent {
 	for yieldEvent.Kind() == wamp.MK_YIELD {
 		nextEventPromise, _ := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
@@ -156,6 +156,8 @@ func (dealer *Dealer) onCall(
 	caller *wamp.Peer,
 	request wamp.CallEvent,
 ) error {
+	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
+
 	route := request.Route()
 	route.CallerID = caller.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
@@ -166,8 +168,8 @@ func (dealer *Dealer) onCall(
 	registrationList := dealer.matchRegistrations(features.URI)
 
 	for _, registration := range registrationList {
-		executor, found := dealer.peers[registration.AuthorID]
-		if !found {
+		executor, exists := dealer.peers[registration.AuthorID]
+		if !exists {
 			log.Printf(
 				"[dealer] peer not found (URI=%s caller.ID=%s registration.ID=%s peer.ID=%s)",
 				features.URI, caller.ID, registration.ID, registration.AuthorID,
@@ -178,7 +180,7 @@ func (dealer *Dealer) onCall(
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		replyEventPromise, _ := executor.PendingReplyEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
+		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
 		e := executor.Send(request)
 		if e == nil {
 			log.Printf(
@@ -193,38 +195,63 @@ func (dealer *Dealer) onCall(
 			continue
 		}
 
-		response, done := <-replyEventPromise
-		if !done {
-			log.Printf(
-				"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-				features.URI, caller.ID, executor.ID, registration.ID,
-			)
-			response = wamp.NewErrorEvent(request, errors.New("TimedOut"))
-		} else if response.Kind() == wamp.MK_YIELD {
-			response = dealer.onYield(caller, executor, response)
+		select {
+		case cancelEvent := <-cancelCallEventPromise:
+			cancelReplyEventPromise()
+
+			cancelFeatures := cancelEvent.Features()
+			cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.session.ID())
+
+			e := executor.Send(cancelEvent)
+			if e == nil {
+				log.Printf(
+					"[dealer] call event successfully cancelled (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+					features.URI, caller.ID, executor.ID, registration.ID,
+				)
+			} else {
+				log.Printf(
+					"[dealer] failed to cancel call event (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s error=%s)",
+					features.URI, caller.ID, executor.ID, registration.ID, e,
+				)
+			}
+		case response, done := <-replyEventPromise:
+			cancelCancelEventPromise()
+
+			if !done {
+				log.Printf(
+					"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+					features.URI, caller.ID, executor.ID, registration.ID,
+				)
+				response = wamp.NewErrorEvent(request, errors.New("TimedOut"))
+			} else if response.Kind() == wamp.MK_YIELD {
+				// TODO cancellation
+				response = dealer.onYield(caller, executor, response)
+			}
+
+			replyFeatures := response.Features()
+			replyFeatures.VisitedRouters = append(replyFeatures.VisitedRouters, dealer.session.ID())
+
+			e = caller.Send(response)
+			if e == nil {
+				log.Printf(
+					"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+					features.URI, caller.ID, executor.ID, registration.ID,
+				)
+			} else {
+				log.Printf(
+					"[dealer] reply not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+					features.URI, caller.ID, executor.ID, registration.ID, e,
+				)
+			}
 		}
 
-		replyFeatures := response.Features()
-		replyFeatures.VisitedRouters = append(replyFeatures.VisitedRouters, dealer.session.ID())
-
-		e = caller.Send(response)
-		if e == nil {
-			log.Printf(
-				"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-				features.URI, caller.ID, executor.ID, registration.ID,
-			)
-		} else {
-			log.Printf(
-				"[dealer] reply not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-				features.URI, caller.ID, executor.ID, registration.ID, e,
-			)
-		}
 		return nil
 	}
 
 	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
 	response := wamp.NewErrorEvent(request, errors.New("ProcedureNotFound"))
 	e := caller.Send(response)
+	cancelCancelEventPromise()
 	return e
 }
 
@@ -271,7 +298,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 			if e == nil && len(payload.URI) > 0 {
 				registration, e := dealer.register(payload.URI, route.CallerID, payload.Options)
 				if e == nil {
-					return wamp.NewReplyEvent(callEvent, registration)
+					return wamp.NewReplyEvent(callEvent, *registration)
 				}
 			} else {
 				e = errors.New("InvalidPayload")
@@ -290,7 +317,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 			if e == nil && len(payload.URI) > 0 {
 				subscription, e := broker.subscribe(payload.URI, route.CallerID, payload.Options)
 				if e == nil {
-					return wamp.NewReplyEvent(callEvent, subscription)
+					return wamp.NewReplyEvent(callEvent, *subscription)
 				}
 			} else {
 				e = errors.New("InvalidPayload")
@@ -333,8 +360,18 @@ func (dealer *Dealer) Setup(broker *Broker) {
 		"wamp.registration.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+			source := wamp.Event(callEvent)
 			URIList := dealer.registrations.DumpURIList()
-			return wamp.NewReplyEvent(callEvent, URIList)
+			for _, uri := range URIList {
+				registrationList := dealer.registrations.Match(uri)
+				nextEvent, e := wamp.Yield(source, registrationList)
+				if e == nil {
+					source = nextEvent
+				} else {
+					break
+				}
+			}
+			return wamp.NewReplyEvent(source, RegistrationList{})
 		},
 	)
 
@@ -342,8 +379,18 @@ func (dealer *Dealer) Setup(broker *Broker) {
 		"wamp.subscription.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+			source := wamp.Event(callEvent)
 			URIList := broker.subscriptions.DumpURIList()
-			return wamp.NewReplyEvent(callEvent, URIList)
+			for _, uri := range URIList {
+				subscriptionList := broker.subscriptions.Match(uri)
+				nextEvent, e := wamp.Yield(source, subscriptionList)
+				if e == nil {
+					source = nextEvent
+				} else {
+					break
+				}
+			}
+			return wamp.NewReplyEvent(source, SubscriptionList{})
 		},
 	)
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/wamp3hub/wamp3go/shared"
 )
 
-func TestHappyPathBoltDB(t *testing.T) {
+func TestBoltDB(t *testing.T) {
 	path := "/tmp/" + wampShared.NewID() + ".db"
 	storage, e := NewBoltDBStorage(path)
 	if e != nil {
