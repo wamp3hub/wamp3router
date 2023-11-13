@@ -1,25 +1,36 @@
-package routerShared
+package routerShared_test
 
-import "testing"
+import (
+	"testing"
 
-func TestSimpleSet(t *testing.T) {
-	instance := NewSet[string]([]string{})
+	routerShared "github.com/wamp3hub/wamp3router/shared"
+)
 
-	instance.Add("alpha")
+func TestSet(t *testing.T) {
+	instance := routerShared.NewSet[string]([]string{"alpha"})
+
 	if !instance.Contains("alpha") {
-		t.Fatal("KeyNotFound")
+		t.Fatal("ItemNotFound")
 	}
 
 	instance.Add("alpha")
 	if !instance.Contains("alpha") {
-		t.Fatal("KeyNotFound")
+		t.Fatal("ItemNotFound")
 	}
 
 	instance.Add("beta")
-	if !instance.Contains("alpha") {
-		t.Fatal("KeyNotFound")
-	}
 	if !instance.Contains("beta") {
-		t.Fatal("KeyNotFound")
+		t.Fatal("ItemNotFound")
+	}
+
+	if instance.Size() != 2 {
+		t.Fatal("InvalidSize")
+	}
+
+	instance.Delete("alpha")
+
+	items := instance.Values()
+	if len(items) != 1 {
+		t.Fatal("Invalid behaviour")
 	}
 }

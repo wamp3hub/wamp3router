@@ -11,7 +11,7 @@ import (
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 )
 
-func generateTicket(
+func GenerateTicket(
 	unixPath string,
 	peerID string,
 	duration time.Duration,
@@ -44,7 +44,7 @@ var (
 		Use:   "generate-ticket",
 		Short: "Generates new authentication ticket",
 		Run: func(cmd *cobra.Command, args []string) {
-			generateTicket(*unixPathFlag, *peerIDFlag, *durationFlag)
+			GenerateTicket(*unixPathFlag, *peerIDFlag, *durationFlag)
 		},
 	}
 )

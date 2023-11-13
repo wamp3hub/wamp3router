@@ -3,7 +3,7 @@ package command
 import (
 	"github.com/spf13/cobra"
 
-	generateTicket "github.com/wamp3hub/wamp3router/daemon/command/generate"
+	"github.com/wamp3hub/wamp3router/daemon/command/generateTicket"
 	"github.com/wamp3hub/wamp3router/daemon/command/run"
 )
 
