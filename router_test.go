@@ -125,7 +125,7 @@ func TestRPC(t *testing.T) {
 
 		expectedResult := "Hello, beta!"
 	
-		pendingResponse := wamp.Call[string](
+		pendingResponse, e := wamp.Call[string](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.greeting"},
 			"beta",
@@ -164,7 +164,7 @@ func TestRPC(t *testing.T) {
 			t.Fatalf("register error %s", e)
 		}
 
-		pendingResponse := wamp.Call[string](
+		pendingResponse, e := wamp.Call[string](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.long"},
 			struct{}{},
@@ -175,12 +175,12 @@ func TestRPC(t *testing.T) {
 	t.Run("Case: Registration Not Found", func(t *testing.T) {
 		session := joinSession(produceNewcomer)
 	
-		pendingResponse := wamp.Call[struct {}](
+		pendingResponse, e := wamp.Call[struct {}](
 			session,
 			&wamp.CallFeatures{URI: "net.example.not_existing"},
 			struct{}{},
 		)
-		_, _, e := pendingResponse.Await()
+		_, _, e = pendingResponse.Await()
 		if e.Error() == "ProcedureNotFound" {
 			t.Log("Success")
 		} else {
@@ -219,7 +219,7 @@ func TestGenerator(t *testing.T) {
 			t.Fatalf("register error %s", e)
 		}
 
-		generator := wamp.NewRemoteGenerator[int](
+		generator, e := wamp.NewRemoteGenerator[int](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.reverse"},
 			100,

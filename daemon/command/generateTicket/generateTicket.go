@@ -22,7 +22,7 @@ func GenerateTicket(
 			PeerID   string
 			Duration time.Duration
 		}
-		pendingResponse := wamp.Call[string](
+		pendingResponse, e := wamp.Call[string](
 			session,
 			&wamp.CallFeatures{URI: "wamp.ticket.generate"},
 			GenerateTicketPayload{peerID, time.Minute * duration},

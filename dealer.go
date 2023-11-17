@@ -82,6 +82,10 @@ func (dealer *Dealer) unregister(
 	}
 }
 
+func shift[T any](items []T, x int) []T {
+	return append(items[x:], items[:x]...)
+}
+
 func (dealer *Dealer) matchRegistrations(
 	uri string,
 ) RegistrationList {
@@ -108,19 +112,55 @@ func (dealer *Dealer) onYield(
 	caller *wamp.Peer,
 	executor *wamp.Peer,
 	yieldEvent wamp.YieldEvent,
-) wamp.ReplyEvent {
+	stopEventPromise wampShared.Promise[wamp.CancelEvent],
+) error {
 	for yieldEvent.Kind() == wamp.MK_YIELD {
-		nextEventPromise, _ := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
+		nextEventPromise, cancelNextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
 		e := caller.Send(yieldEvent)
-		if e == nil {
+		if e != nil {
 			log.Printf(
-				"[dealer] generator yield (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-				caller.ID, executor.ID, yieldEvent.ID(),
+				"[dealer] generator yield error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+				e, caller.ID, executor.ID, yieldEvent.ID(),
 			)
+
+			// TODO wamp.NewStopEvent()
+			break
 		}
 
-		nextEvent, done := <-nextEventPromise
-		if done {
+		log.Printf(
+			"[dealer] generator yield success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+			caller.ID, executor.ID, yieldEvent.ID(),
+		)
+
+		select {
+		case stopEvent := <-stopEventPromise:
+			cancelNextEventPromise()
+
+			e := executor.Send(stopEvent)
+			if e == nil {
+				log.Printf(
+					"[dealer] generator stop success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+					caller.ID, executor.ID, yieldEvent.ID(),
+				)
+			} else {
+				log.Printf(
+					"[dealer] generator stop error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+					e, caller.ID, executor.ID, yieldEvent.ID(),
+				)
+			}
+
+			break
+		case nextEvent, done := <-nextEventPromise:
+			if !done {
+				log.Printf(
+					"[dealer] generator lifetime expired (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+					caller.ID, executor.ID, yieldEvent.ID(),
+				)
+
+				// TODO wamp.NewStopEvent()
+				break
+			}
+
 			log.Printf(
 				"[dealer] generator next step (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
 				caller.ID, executor.ID, nextEvent.ID(),
@@ -132,11 +172,19 @@ func (dealer *Dealer) onYield(
 				yieldEvent, done = <-yieldEventPromise
 				if done {
 					log.Printf(
-						"[dealer] generator respond (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+						"[dealer] generator step success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
 						caller.ID, executor.ID, yieldEvent.ID(),
 					)
+					continue
+				} else {
+					e = errors.New("TimedOut")
 				}
+			} else {
+				e = errors.New("InternalError")
 			}
+
+			yieldEvent = wamp.NewErrorEvent(nextEvent, e)
+			break
 		}
 	}
 
@@ -145,25 +193,23 @@ func (dealer *Dealer) onYield(
 		caller.ID, executor.ID, yieldEvent.ID(),
 	)
 
-	return yieldEvent
-}
-
-func shift[T any](items []T, x int) []T {
-	return append(items[x:], items[:x]...)
 }
 
 func (dealer *Dealer) onCall(
 	caller *wamp.Peer,
 	request wamp.CallEvent,
 ) error {
-	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
+	features := request.Features()
+	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
+
+	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
+		request.ID(),
+		features.Timeout*2,
+	)
 
 	route := request.Route()
 	route.CallerID = caller.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
-
-	features := request.Features()
-	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
 	registrationList := dealer.matchRegistrations(features.URI)
 
@@ -171,7 +217,7 @@ func (dealer *Dealer) onCall(
 		executor, exists := dealer.peers[registration.AuthorID]
 		if !exists {
 			log.Printf(
-				"[dealer] peer not found (URI=%s caller.ID=%s registration.ID=%s peer.ID=%s)",
+				"[dealer] invalid registartion (peer not found) (registration.ID=%s peer.ID=%s URI=%s caller.ID=%s)",
 				features.URI, caller.ID, registration.ID, registration.AuthorID,
 			)
 			continue
@@ -180,7 +226,7 @@ func (dealer *Dealer) onCall(
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(request.ID(), wamp.DEFAULT_TIMEOUT)
+		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(request.ID(), features.Timeout)
 		e := executor.Send(request)
 		if e == nil {
 			log.Printf(
@@ -215,8 +261,6 @@ func (dealer *Dealer) onCall(
 				)
 			}
 		case response, done := <-replyEventPromise:
-			cancelCancelEventPromise()
-
 			if !done {
 				log.Printf(
 					"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
@@ -224,9 +268,10 @@ func (dealer *Dealer) onCall(
 				)
 				response = wamp.NewErrorEvent(request, errors.New("TimedOut"))
 			} else if response.Kind() == wamp.MK_YIELD {
-				// TODO cancellation
-				response = dealer.onYield(caller, executor, response)
+				response = dealer.onYield(caller, executor, response, cancelCallEventPromise)
 			}
+
+			cancelCancelEventPromise()
 
 			replyFeatures := response.Features()
 			replyFeatures.VisitedRouters = append(replyFeatures.VisitedRouters, dealer.session.ID())
@@ -289,7 +334,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	}
 
 	mount(
-		"wamp.register",
+		"wamp.router.register",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
@@ -308,7 +353,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	)
 
 	mount(
-		"wamp.subscribe",
+		"wamp.router.subscribe",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
@@ -327,7 +372,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	)
 
 	mount(
-		"wamp.unregister",
+		"wamp.router.unregister",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
@@ -342,7 +387,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	)
 
 	mount(
-		"wamp.unsubscribe",
+		"wamp.router.unsubscribe",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			route := callEvent.Route()
@@ -357,7 +402,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	)
 
 	mount(
-		"wamp.registration.list",
+		"wamp.router.registration.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			source := wamp.Event(callEvent)
@@ -376,7 +421,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	)
 
 	mount(
-		"wamp.subscription.list",
+		"wamp.router.subscription.list",
 		&wamp.RegisterOptions{},
 		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
 			source := wamp.Event(callEvent)

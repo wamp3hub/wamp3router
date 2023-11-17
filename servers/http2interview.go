@@ -14,7 +14,7 @@ import (
 )
 
 func rpcAuthenticate(session *wamp.Session, credentials any) error {
-	pendingResponse := wamp.Call[string](session, &wamp.CallFeatures{URI: "wamp.authenticate"}, credentials)
+	pendingResponse, e := wamp.Call[string](session, &wamp.CallFeatures{URI: "wamp.authenticate"}, credentials)
 	_, role, e := pendingResponse.Await()
 	if e == nil {
 		log.Printf("authentication success role=%s", role)
