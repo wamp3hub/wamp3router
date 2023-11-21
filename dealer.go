@@ -108,106 +108,183 @@ func (dealer *Dealer) matchRegistrations(
 	return registrationList
 }
 
-func (dealer *Dealer) onYield(
+func (dealer *Dealer) sendReply(
+	caller *wamp.Peer,
+	event wamp.ReplyEvent,
+) {
+	features := event.Features()
+	features.VisitedRouters = append(features.VisitedRouters, dealer.session.ID())
+	e := caller.Send(event)
+	if e == nil {
+		log.Printf("[dealer] invocation processed successfully (caller.ID=%s, invocation.ID=%s)", caller.ID, features.InvocationID)
+	} else {
+		log.Printf("[dealer] reply not delivered %s (caller.ID=%s, invocation.ID=%s)", e, caller.ID, features.InvocationID)
+	}
+}
+
+func (dealer *Dealer) sendStop(
+	executor *wamp.Peer,
+	generatorID string,
+) {
+	event := wamp.NewStopEvent(generatorID)
+	features := event.Features()
+	features.VisitedRouters = append(features.VisitedRouters, dealer.session.ID())
+	e := executor.Send(event)
+	if e == nil {
+		log.Printf(
+			"[dealer] generator stop success (executor.ID=%s generator.ID=%s)",
+			executor.ID, features.InvocationID,
+		)
+	} else {
+		log.Printf(
+			"[dealer] generator stop error %s (executor.ID=%s generator.ID=%s)",
+			e, executor.ID, features.InvocationID,
+		)
+	}
+}
+
+func (dealer *Dealer) onNext(
+	generatorID string,
 	caller *wamp.Peer,
 	executor *wamp.Peer,
-	yieldEvent wamp.YieldEvent,
-	stopEventPromise wampShared.Promise[wamp.CancelEvent],
+	nextEvent wamp.NextEvent,
+	stopEventPromise wampShared.Promise[wamp.StopEvent],
 ) error {
-	for yieldEvent.Kind() == wamp.MK_YIELD {
-		nextEventPromise, cancelNextEventPromise := caller.PendingNextEvents.New(yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME)
-		e := caller.Send(yieldEvent)
-		if e != nil {
-			log.Printf(
-				"[dealer] generator yield error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-				e, caller.ID, executor.ID, yieldEvent.ID(),
-			)
+	nextFeatures := nextEvent.Features()
 
-			// TODO wamp.NewStopEvent()
-			break
-		}
+	yieldEventPromise, cancelYieldEventPromise := executor.PendingReplyEvents.New(
+		nextEvent.ID(), nextFeatures.Timeout,
+	)
+
+	e := executor.Send(nextEvent)
+	if e != nil {
+		cancelYieldEventPromise()
 
 		log.Printf(
-			"[dealer] generator yield success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-			caller.ID, executor.ID, yieldEvent.ID(),
+			"[dealer] send next error %s (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
+			e, caller.ID, executor.ID, nextEvent.ID(),
 		)
 
-		select {
-		case stopEvent := <-stopEventPromise:
-			cancelNextEventPromise()
+		response := wamp.NewErrorEvent(nextEvent, wamp.InternalError)
+		dealer.sendReply(caller, response)
 
-			e := executor.Send(stopEvent)
-			if e == nil {
-				log.Printf(
-					"[dealer] generator stop success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-					caller.ID, executor.ID, yieldEvent.ID(),
-				)
-			} else {
-				log.Printf(
-					"[dealer] generator stop error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-					e, caller.ID, executor.ID, yieldEvent.ID(),
-				)
-			}
-
-			break
-		case nextEvent, done := <-nextEventPromise:
-			if !done {
-				log.Printf(
-					"[dealer] generator lifetime expired (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-					caller.ID, executor.ID, yieldEvent.ID(),
-				)
-
-				// TODO wamp.NewStopEvent()
-				break
-			}
-
-			log.Printf(
-				"[dealer] generator next step (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
-				caller.ID, executor.ID, nextEvent.ID(),
-			)
-
-			yieldEventPromise, _ := executor.PendingReplyEvents.New(nextEvent.ID(), wamp.DEFAULT_TIMEOUT)
-			e := executor.Send(nextEvent)
-			if e == nil {
-				yieldEvent, done = <-yieldEventPromise
-				if done {
-					log.Printf(
-						"[dealer] generator step success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-						caller.ID, executor.ID, yieldEvent.ID(),
-					)
-					continue
-				} else {
-					e = errors.New("TimedOut")
-				}
-			} else {
-				e = errors.New("InternalError")
-			}
-
-			yieldEvent = wamp.NewErrorEvent(nextEvent, e)
-			break
-		}
+		return e
 	}
 
 	log.Printf(
-		"[dealer] destroy generator (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+		"[dealer] send next success (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
+		caller.ID, executor.ID, nextEvent.ID(),
+	)
+
+	select {
+	case response, done := <-yieldEventPromise:
+		if !done {
+			log.Printf(
+				"[dealer] yield error (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
+				caller.ID, executor.ID, nextEvent.ID(),
+			)
+
+			response = wamp.NewErrorEvent(nextEvent, wamp.TimedOut)
+		} else if response.Kind() == wamp.MK_YIELD {
+			return dealer.onYield(
+				generatorID, caller, executor, response, stopEventPromise,
+			)
+		}
+
+		dealer.sendReply(caller, response)
+	case <-stopEventPromise:
+		cancelYieldEventPromise()
+
+		dealer.sendStop(executor, generatorID)
+	}
+
+	return nil
+}
+
+func (dealer *Dealer) onYield(
+	generatorID string,
+	caller *wamp.Peer,
+	executor *wamp.Peer,
+	yieldEvent wamp.YieldEvent,
+	stopEventPromise wampShared.Promise[wamp.StopEvent],
+) error {
+	nextEventPromise, cancelNextEventPromise := caller.PendingNextEvents.New(
+		yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME,
+	)
+
+	e := caller.Send(yieldEvent)
+	if e != nil {
+		cancelNextEventPromise()
+
+		log.Printf(
+			"[dealer] send yield error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
+			e, caller.ID, executor.ID, yieldEvent.ID(),
+		)
+
+		dealer.sendStop(executor, generatorID)
+
+		return e
+	}
+
+	log.Printf(
+		"[dealer] send yield success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
 		caller.ID, executor.ID, yieldEvent.ID(),
 	)
 
+	select {
+	case nextEvent := <-nextEventPromise:
+		return dealer.onNext(
+			generatorID, caller, executor, nextEvent, stopEventPromise,
+		)
+	case <-stopEventPromise:
+		cancelNextEventPromise()
+
+		dealer.sendStop(executor, generatorID)
+	}
+
+	return nil
+}
+
+func (dealer *Dealer) generator(
+	caller *wamp.Peer,
+	executor *wamp.Peer,
+	callEvent wamp.CallEvent,
+	yieldEvent wamp.YieldEvent,
+) error {
+	generator := new(wamp.NewGeneratorPayload)
+	yieldEvent.Payload(generator)
+
+	stopEventPromise, cancelStopEventPromise := executor.PendingCancelEvents.New(
+		generator.ID, wamp.DEFAULT_GENERATOR_LIFETIME,
+	)
+
+	e := dealer.onYield(
+		generator.ID, caller, executor, yieldEvent, stopEventPromise,
+	)
+
+	cancelStopEventPromise()
+
+	log.Printf(
+		"[dealer] destroy generator (caller.ID=%s executor.ID=%s)",
+		caller.ID, executor.ID,
+	)
+
+	return e
 }
 
 func (dealer *Dealer) onCall(
 	caller *wamp.Peer,
-	request wamp.CallEvent,
+	callEvent wamp.CallEvent,
 ) error {
-	features := request.Features()
+	features := callEvent.Features()
 	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
 
 	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
-		request.ID(),
-		features.Timeout*2,
+		callEvent.ID(),
+		features.Timeout,
 	)
 
-	route := request.Route()
+	route := callEvent.Route()
 	route.CallerID = caller.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
 
@@ -226,78 +303,71 @@ func (dealer *Dealer) onCall(
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(request.ID(), features.Timeout)
-		e := executor.Send(request)
-		if e == nil {
+		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(
+			callEvent.ID(), features.Timeout,
+		)
+		e := executor.Send(callEvent)
+		if e != nil {
 			log.Printf(
-				"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-				features.URI, caller.ID, registration.AuthorID, registration.ID,
-			)
-		} else {
-			log.Printf(
-				"[dealer] executor did not accept request (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
+				"[dealer] executor did not accept invocation (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
 				features.URI, caller.ID, registration.AuthorID, registration.ID, e,
 			)
 			continue
 		}
 
+		log.Printf(
+			"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
+			features.URI, caller.ID, registration.AuthorID, registration.ID,
+		)
+
 		select {
-		case cancelEvent := <-cancelCallEventPromise:
+		case cancelEvent, done := <-cancelCallEventPromise:
 			cancelReplyEventPromise()
 
-			cancelFeatures := cancelEvent.Features()
-			cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.session.ID())
-
-			e := executor.Send(cancelEvent)
-			if e == nil {
-				log.Printf(
-					"[dealer] call event successfully cancelled (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-					features.URI, caller.ID, executor.ID, registration.ID,
-				)
+			if done {
+				cancelFeatures := cancelEvent.Features()
+				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.session.ID())
+				e := executor.Send(cancelEvent)
+				if e == nil {
+					log.Printf(
+						"[dealer] call event successfully cancelled (executor.ID=%s invocation.ID=%s)",
+						executor.ID, cancelFeatures.InvocationID,
+					)
+				} else {
+					log.Printf(
+						"[dealer] cancel error %s (executor.ID=%s invocation.ID=%s)",
+						e, executor.ID, cancelFeatures.InvocationID,
+					)
+				}
 			} else {
-				log.Printf(
-					"[dealer] failed to cancel call event (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s error=%s)",
-					features.URI, caller.ID, executor.ID, registration.ID, e,
-				)
-			}
-		case response, done := <-replyEventPromise:
-			if !done {
 				log.Printf(
 					"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
 					features.URI, caller.ID, executor.ID, registration.ID,
 				)
-				response = wamp.NewErrorEvent(request, errors.New("TimedOut"))
-			} else if response.Kind() == wamp.MK_YIELD {
-				response = dealer.onYield(caller, executor, response, cancelCallEventPromise)
-			}
 
+				response := wamp.NewErrorEvent(callEvent, wamp.TimedOut)
+				dealer.sendReply(caller, response)
+			}
+		case response := <-replyEventPromise:
 			cancelCancelEventPromise()
 
-			replyFeatures := response.Features()
-			replyFeatures.VisitedRouters = append(replyFeatures.VisitedRouters, dealer.session.ID())
-
-			e = caller.Send(response)
-			if e == nil {
-				log.Printf(
-					"[dealer] invocation processed successfully (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-					features.URI, caller.ID, executor.ID, registration.ID,
-				)
+			if response.Kind() == wamp.MK_YIELD {
+				dealer.generator(caller, executor, callEvent, response)
 			} else {
-				log.Printf(
-					"[dealer] reply not delivered (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-					features.URI, caller.ID, executor.ID, registration.ID, e,
-				)
+				dealer.sendReply(caller, response)
 			}
 		}
 
 		return nil
 	}
 
-	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
-	response := wamp.NewErrorEvent(request, errors.New("ProcedureNotFound"))
-	e := caller.Send(response)
 	cancelCancelEventPromise()
-	return e
+
+	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	response := wamp.NewErrorEvent(callEvent, errors.New("ProcedureNotFound"))
+	dealer.sendReply(caller, response)
+
+	return nil
 }
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
