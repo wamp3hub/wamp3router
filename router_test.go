@@ -192,38 +192,44 @@ func TestRPC(t *testing.T) {
 func TestGenerator(t *testing.T) {
 	produceNewcomer := runRouter()
 
-	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+	alphaSession := joinSession(produceNewcomer)
 
-		registration, e := wamp.Register(
-			alphaSession,
-			"net.example.reverse",
-			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) wamp.ReplyEvent {
-				source := wamp.Event(callEvent)
-				var n int
-				e := callEvent.Payload(&n)
-				if e == nil {
-					for i := n; i > 0; i-- {
-						source, _ = wamp.Yield(source, i)
-					}
-					return wamp.NewReplyEvent(source, 0)
+	_, e := wamp.Register(
+		alphaSession,
+		"net.example.reverse",
+		&wamp.RegisterOptions{},
+		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+			source := wamp.Event(callEvent)
+			var n int
+			e := callEvent.Payload(&n)
+			if e == nil {
+				for i := n; i > 0; i-- {
+					source, _ = wamp.Yield(source, i)
 				}
-				return wamp.NewErrorEvent(callEvent, errors.New("InvalidPayload"))
-			},
-		)
-		if e == nil {
-			t.Log("register success")
-		} else {
-			t.Fatalf("register error %s", e)
-		}
+				return wamp.NewReplyEvent(source, 0)
+			}
+			return wamp.NewErrorEvent(callEvent, errors.New("InvalidPayload"))
+		},
+	)
+	if e == nil {
+		t.Log("register success")
+	} else {
+		t.Fatalf("register error %s", e)
+	}
+
+	t.Run("Case: Happy Path", func(t *testing.T) {
+		betaSession := joinSession(produceNewcomer)
 
 		generator, e := wamp.NewRemoteGenerator[int](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.reverse"},
 			100,
 		)
+		if e == nil {
+			t.Log("generator success")
+		} else {
+			t.Fatalf("generator error %s", e)
+		}
 		for generator.Active() {
 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
 			if e == nil {
@@ -232,13 +238,43 @@ func TestGenerator(t *testing.T) {
 				t.Fatalf("generator error %s", e)
 			}
 		}
+	})
 
-		e = wamp.Unregister(alphaSession, registration.ID)
+	t.Run("Case: Stop", func(t *testing.T) {
+		betaSession := joinSession(produceNewcomer)
+
+		generator, e := wamp.NewRemoteGenerator[int](
+			betaSession,
+			&wamp.CallFeatures{URI: "net.example.reverse"},
+			100,
+		)
 		if e == nil {
-			t.Log("unregister success")
+			t.Log("generator successfully created")
 		} else {
-			t.Fatalf("unregister error %s", e)
+			t.Fatalf("create generator error %s", e)
+		}
+		for i := 0; i < 10; i++ {
+			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
+			if e == nil {
+				t.Logf("result %d", result)
+			} else {
+				t.Fatalf("generator error %s", e)
+			}
+		}
+
+		e = generator.Stop()
+		if e == nil {
+			t.Log("stop generator success")
+		} else {
+			t.Fatalf("stop generator error %s", e)
 		}
 	})
+
+	// e = wamp.Unregister(alphaSession, registration.ID)
+	// if e == nil {
+	// 	t.Log("unregister success")
+	// } else {
+	// 	t.Fatalf("unregister error %s", e)
+	// }
 }
 
