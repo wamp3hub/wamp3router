@@ -49,7 +49,7 @@ func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 			e, referee.caller.ID, referee.executor.ID, nextEvent.ID(),
 		)
 
-		response := wamp.NewErrorEvent(nextEvent, wamp.InternalError)
+		response := wamp.NewErrorEvent(nextEvent, wamp.SomethingWentWrong)
 		referee.dealer.sendReply(referee.caller, response)
 
 		return e
@@ -68,7 +68,7 @@ func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 				referee.caller.ID, referee.executor.ID, nextEvent.ID(),
 			)
 
-			response = wamp.NewErrorEvent(nextEvent, wamp.TimedOut)
+			response = wamp.NewErrorEvent(nextEvent, wamp.TimedOutError)
 		} else if response.Kind() == wamp.MK_YIELD {
 			return referee.onYield(response)
 		}
@@ -84,9 +84,7 @@ func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 }
 
 func (referee *Referee) onYield(yieldEvent wamp.YieldEvent) error {
-	nextEventPromise, cancelNextEventPromise := referee.caller.PendingNextEvents.New(
-		yieldEvent.ID(), wamp.DEFAULT_GENERATOR_LIFETIME,
-	)
+	nextEventPromise, cancelNextEventPromise := referee.caller.PendingNextEvents.New(yieldEvent.ID(), 0)
 
 	e := referee.caller.Send(yieldEvent)
 	if e != nil {

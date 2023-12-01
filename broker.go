@@ -141,27 +141,19 @@ func (broker *Broker) onLeave(peer *wamp.Peer) {
 func (broker *Broker) onJoin(peer *wamp.Peer) {
 	log.Printf("[broker] attach peer (ID=%s)", peer.ID)
 	broker.peers[peer.ID] = peer
-	peer.ConsumeIncomingPublishEvents(
+	peer.IncomingPublishEvents.Observe(
 		func(event wamp.PublishEvent) { broker.onPublish(peer, event) },
 		func() { broker.onLeave(peer) },
 	)
 }
 
-func (broker *Broker) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) {
+func (broker *Broker) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
 	log.Printf("[broker] up...")
-	consumeNewcomers(
+	newcomers.Observe(
 		broker.onJoin,
 		func() { log.Printf("[broker] down...") },
 	)
 }
 
 func (broker *Broker) Setup(dealer *Dealer) {
-	// mount := func(
-	// 	uri string,
-	// 	options *wamp.SubscribeOptions,
-	// 	procedure wamp.PublishEndpoint,
-	// ) {
-	// 	subscription, _ := broker.subscribe(uri, broker.session.ID(), options)
-	// 	broker.session.Subscriptions[subscription.ID] = procedure
-	// }
 }

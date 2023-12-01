@@ -14,11 +14,11 @@ import (
 )
 
 type UnixServer struct {
-	Path            string
-	ProduceNewcomer wampShared.Producible[*wamp.Peer]
-	Session         *wamp.Session
-	KeyRing         *routerShared.KeyRing
-	super           net.Listener
+	Path      string
+	Newcomers *wampShared.ObservableObject[*wamp.Peer]
+	Session   *wamp.Session
+	KeyRing   *routerShared.KeyRing
+	super     net.Listener
 }
 
 func (server *UnixServer) onConnect(
@@ -37,7 +37,7 @@ func (server *UnixServer) onConnect(
 		e = transport.ReadJSON(clientMessage)
 		if e == nil {
 			peer := wamp.SpawnPeer(serverMessage.YourID, transport)
-			server.ProduceNewcomer(peer)
+			server.Newcomers.Next(peer)
 		}
 	}
 	return e

@@ -16,7 +16,7 @@ import (
 
 func http2websocketMount(
 	keyRing *routerShared.KeyRing,
-	produceNewcomers wampShared.Producible[*wamp.Peer],
+	newcomers *wampShared.ObservableObject[*wamp.Peer],
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -38,7 +38,7 @@ func http2websocketMount(
 				// serializerCode := query.Get("serializer")
 				__transport := wampTransports.WSTransport(wampSerializers.DefaultSerializer, connection)
 				peer := wamp.SpawnPeer(claims.Subject, __transport)
-				produceNewcomers(peer)
+				newcomers.Next(peer)
 				log.Printf("[http2-websocket] new peer (ID=%s)", peer.ID)
 			} else {
 				log.Printf("[http2-websocket] %s", e)

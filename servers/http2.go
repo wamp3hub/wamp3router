@@ -47,7 +47,7 @@ func jsonEndpoint(
 type HTTP2Server struct {
 	EnableWebsocket bool
 	Address         string
-	ProduceNewcomer wampShared.Producible[*wamp.Peer]
+	Newcomers       *wampShared.ObservableObject[*wamp.Peer]
 	Session         *wamp.Session
 	KeyRing         *routerShared.KeyRing
 	super           *http.Server
@@ -58,7 +58,7 @@ func (server *HTTP2Server) Serve() error {
 
 	serveMux.Handle("/wamp/v1/interview", http2interviewMount(server.Session, server.KeyRing))
 	if server.EnableWebsocket {
-		serveMux.Handle("/wamp/v1/websocket", http2websocketMount(server.KeyRing, server.ProduceNewcomer))
+		serveMux.Handle("/wamp/v1/websocket", http2websocketMount(server.KeyRing, server.Newcomers))
 	}
 
 	server.super = &http.Server{Addr: server.Address, Handler: serveMux}

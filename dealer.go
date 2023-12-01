@@ -127,11 +127,10 @@ func (dealer *Dealer) onCall(
 	callEvent wamp.CallEvent,
 ) error {
 	features := callEvent.Features()
-	log.Printf("[dealer] call (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	log.Printf("[dealer] call (URI=%s caller.ID=%s timeout=%s)", features.URI, caller.ID, features.Timeout)
 
 	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
-		callEvent.ID(),
-		features.Timeout,
+		callEvent.ID(), features.Timeout,
 	)
 
 	route := callEvent.Route()
@@ -153,9 +152,7 @@ func (dealer *Dealer) onCall(
 		route.EndpointID = registration.ID
 		route.ExecutorID = executor.ID
 
-		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(
-			callEvent.ID(), features.Timeout,
-		)
+		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
 		e := executor.Send(callEvent)
 		if e != nil {
 			log.Printf(
@@ -195,7 +192,7 @@ func (dealer *Dealer) onCall(
 					features.URI, caller.ID, executor.ID, registration.ID,
 				)
 
-				response := wamp.NewErrorEvent(callEvent, wamp.TimedOut)
+				response := wamp.NewErrorEvent(callEvent, wamp.TimedOutError)
 				dealer.sendReply(caller, response)
 			}
 		case response := <-replyEventPromise:
@@ -229,15 +226,15 @@ func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	log.Printf("[dealer] attach peer (ID=%s)", peer.ID)
 	dealer.peers[peer.ID] = peer
-	peer.ConsumeIncomingCallEvents(
+	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
 		func() { dealer.onLeave(peer) },
 	)
 }
 
-func (dealer *Dealer) Serve(consumeNewcomers wampShared.Consumable[*wamp.Peer]) {
+func (dealer *Dealer) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
 	log.Printf("[dealer] up...")
-	consumeNewcomers(
+	newcomers.Observe(
 		dealer.onJoin,
 		func() { log.Printf("[dealer] down...") },
 	)
@@ -250,7 +247,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 		procedure func(callEvent wamp.CallEvent) wamp.ReplyEvent,
 	) {
 		registration, _ := dealer.register(uri, dealer.session.ID(), options)
-		endpoint := wamp.NewCallEndpoint(procedure)
+		endpoint := wamp.NewCallEventEndpoint(procedure)
 		dealer.session.Registrations[registration.ID] = endpoint
 	}
 
@@ -337,7 +334,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 					break
 				}
 			}
-			return wamp.NewReplyEvent(source, RegistrationList{})
+			return wamp.GeneratorExit(source)
 		},
 	)
 
@@ -356,7 +353,7 @@ func (dealer *Dealer) Setup(broker *Broker) {
 					break
 				}
 			}
-			return wamp.NewReplyEvent(source, SubscriptionList{})
+			return wamp.GeneratorExit(source)
 		},
 	)
 }

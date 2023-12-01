@@ -13,45 +13,45 @@ import (
 	routerStorages "github.com/wamp3hub/wamp3router/storages"
 )
 
-func runRouter() wampShared.Producible[*wamp.Peer] {
+func runRouter() *wampShared.ObservableObject[*wamp.Peer] {
 	routerID := wampShared.NewID()
 
 	storagePath := "/tmp/wamp3rd-" + routerID + ".db"
 	storage, _ := routerStorages.NewBoltDBStorage(storagePath)
 
-	consumeNewcomers, produceNewcomer, _ := wampShared.NewStream[*wamp.Peer]()
+	newcomers := wampShared.NewObservable[*wamp.Peer]()
 
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
 	lPeer := wamp.SpawnPeer(routerID, lTransport)
 	rPeer := wamp.SpawnPeer(routerID, rTransport)
 	session := wamp.NewSession(rPeer)
 
-	router.Serve(session, storage, consumeNewcomers)
+	router.Serve(session, storage, newcomers)
 
-	produceNewcomer(lPeer)
+	newcomers.Next(lPeer)
 
-	return produceNewcomer
+	return newcomers
 }
 
 func joinSession(
-	produceNewcomer wampShared.Producible[*wamp.Peer],
+	newcomers *wampShared.ObservableObject[*wamp.Peer],
 ) *wamp.Session {
 	alphaID := wampShared.NewID()
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
 	lPeer := wamp.SpawnPeer(alphaID, lTransport)
 	rPeer := wamp.SpawnPeer(alphaID, rTransport)
 	session := wamp.NewSession(rPeer)
-	produceNewcomer(lPeer)
+	newcomers.Next(lPeer)
 	time.Sleep(time.Second)
 	return session
 }
 
 func TestSubscribePublish(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		wg := new(sync.WaitGroup)
 
@@ -97,11 +97,11 @@ func TestSubscribePublish(t *testing.T) {
 }
 
 func TestRPC(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		registration, e := wamp.Register(
 			alphaSession,
@@ -124,7 +124,7 @@ func TestRPC(t *testing.T) {
 		}
 
 		expectedResult := "Hello, beta!"
-	
+
 		pendingResponse, e := wamp.Call[string](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.greeting"},
@@ -146,8 +146,8 @@ func TestRPC(t *testing.T) {
 	})
 
 	t.Run("Case: Cancellation", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		_, e := wamp.Register(
 			alphaSession,
@@ -173,9 +173,9 @@ func TestRPC(t *testing.T) {
 	})
 
 	t.Run("Case: Registration Not Found", func(t *testing.T) {
-		session := joinSession(produceNewcomer)
-	
-		pendingResponse, e := wamp.Call[struct {}](
+		session := joinSession(nextNewcomer)
+
+		pendingResponse, e := wamp.Call[struct{}](
 			session,
 			&wamp.CallFeatures{URI: "net.example.not_existing"},
 			struct{}{},
@@ -190,9 +190,9 @@ func TestRPC(t *testing.T) {
 }
 
 func TestGenerator(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
 
-	alphaSession := joinSession(produceNewcomer)
+	alphaSession := joinSession(nextNewcomer)
 
 	_, e := wamp.Register(
 		alphaSession,
@@ -218,7 +218,7 @@ func TestGenerator(t *testing.T) {
 	}
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		betaSession := joinSession(produceNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		generator, e := wamp.NewRemoteGenerator[int](
 			betaSession,
@@ -241,7 +241,7 @@ func TestGenerator(t *testing.T) {
 	})
 
 	t.Run("Case: Stop", func(t *testing.T) {
-		betaSession := joinSession(produceNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		generator, e := wamp.NewRemoteGenerator[int](
 			betaSession,
@@ -277,4 +277,3 @@ func TestGenerator(t *testing.T) {
 	// 	t.Fatalf("unregister error %s", e)
 	// }
 }
-

@@ -34,29 +34,29 @@ func Run(
 		panic("failed to initialize storage")
 	}
 
-	consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
+	newcomers := wampShared.NewObservable[*wamp.Peer]()
 
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
 	lPeer := wamp.SpawnPeer(routerID, lTransport)
 	rPeer := wamp.SpawnPeer(routerID, rTransport)
 	session := wamp.NewSession(rPeer)
 
-	router.Serve(session, storage, consumeNewcomers)
+	router.Serve(session, storage, newcomers)
 
-	produceNewcomer(lPeer)
+	newcomers.Next(lPeer)
 
 	http2server := routerServers.HTTP2Server{
 		EnableWebsocket: enableWebsocket,
 		Address:         http2address,
 		Session:         session,
 		KeyRing:         keyRing,
-		ProduceNewcomer: produceNewcomer,
+		Newcomers:       newcomers,
 	}
 	unixServer := routerServers.UnixServer{
-		Path: unixPath,
-		Session: session,
-		KeyRing: keyRing,
-		ProduceNewcomer: produceNewcomer,
+		Path:      unixPath,
+		Session:   session,
+		KeyRing:   keyRing,
+		Newcomers: newcomers,
 	}
 
 	go http2server.Serve()
@@ -69,7 +69,7 @@ func Run(
 	log.Printf("Gracefully shutting down...")
 	http2server.Shutdown()
 	unixServer.Shutdown()
-	closeNewcomers()
+	newcomers.Complete()
 	storage.Destroy()
 	log.Printf("Shutdown complete")
 }

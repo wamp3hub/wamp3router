@@ -16,7 +16,7 @@ type Server interface {
 func Serve(
 	session *wamp.Session,
 	storage routerShared.Storage,
-	consumeNewcomers wampShared.Consumable[*wamp.Peer],
+	newcomers *wampShared.ObservableObject[*wamp.Peer],
 ) {
 	log.Printf("[router] up...")
 
@@ -26,7 +26,7 @@ func Serve(
 	broker.Setup(dealer)
 	dealer.Setup(broker)
 
-	consumeNewcomers(
+	newcomers.Observe(
 		func(peer *wamp.Peer) {
 			log.Printf("[router] attach peer (ID=%s)", peer.ID)
 			<-peer.Alive
@@ -35,6 +35,6 @@ func Serve(
 		func() { log.Printf("[router] down...") },
 	)
 
-	broker.Serve(consumeNewcomers)
-	dealer.Serve(consumeNewcomers)
+	broker.Serve(newcomers)
+	dealer.Serve(newcomers)
 }
