@@ -1,6 +1,7 @@
 package routerShared_test
 
 import (
+	"log/slog"
 	"testing"
 
 	wamp "github.com/wamp3hub/wamp3go"
@@ -11,16 +12,18 @@ import (
 
 func TestURIM(t *testing.T) {
 	expectedRegistration := wamp.Registration{
-		ID:  wampShared.NewID(),
-		URI: "net.example.echo",
+		ID:       wampShared.NewID(),
+		URI:      "net.example.echo",
 		AuthorID: wampShared.NewID(),
-		Options: nil,
+		Options:  nil,
 	}
+
+	logger := slog.Default()
 
 	storagePath := "/tmp/" + wampShared.NewID() + ".db"
 	storage, _ := routerStorages.NewBoltDBStorage(storagePath)
 
-	urim := routerShared.NewURIM[*wamp.RegisterOptions](storage)
+	urim := routerShared.NewURIM[*wamp.RegisterOptions](storage, logger)
 	e := urim.Add(&expectedRegistration)
 	if e != nil {
 		t.Fatalf("invalid behaviour %s", e)

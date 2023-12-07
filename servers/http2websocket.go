@@ -1,7 +1,7 @@
 package routerServers
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -17,6 +17,7 @@ import (
 func http2websocketMount(
 	keyRing *routerShared.KeyRing,
 	newcomers *wampShared.ObservableObject[*wamp.Peer],
+	logger *slog.Logger,
 ) http.Handler {
 	websocketUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -26,7 +27,7 @@ func http2websocketMount(
 
 	// creates websocket connection
 	onWebsocketUpgrade := func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[http2-websocket] new upgrade request (ip=%s)", r.RemoteAddr)
+		logger.Info("new upgrade request", "clientAddress", r.RemoteAddr)
 		query := r.URL.Query()
 		ticket := query.Get("ticket")
 		claims, e := keyRing.JWTParse(ticket)
@@ -37,18 +38,18 @@ func http2websocketMount(
 			if e == nil {
 				// serializerCode := query.Get("serializer")
 				__transport := wampTransports.WSTransport(wampSerializers.DefaultSerializer, connection)
-				peer := wamp.SpawnPeer(claims.Subject, __transport)
+				peer := wamp.SpawnPeer(claims.Subject, __transport, logger)
 				newcomers.Next(peer)
-				log.Printf("[http2-websocket] new peer (ID=%s)", peer.ID)
+				logger.Info("new peer", "ID", peer.ID)
 			} else {
-				log.Printf("[http2-websocket] %s", e)
+				logger.Error("failed to upgrade", "error", e)
 			}
 		} else {
 			writeJSONBody(w, 400, e)
 		}
 	}
 
-	log.Print("[http2-websocket] up...")
+	logger.Info("up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", onWebsocketUpgrade)
 	return serveMux

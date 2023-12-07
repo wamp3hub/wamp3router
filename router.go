@@ -1,10 +1,11 @@
 package router
 
 import (
-	"log"
+	"log/slog"
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
+	wampTransports "github.com/wamp3hub/wamp3go/transports"
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
@@ -13,28 +14,62 @@ type Server interface {
 	Shutdown() error
 }
 
-func Serve(
-	session *wamp.Session,
+type Router struct {
+	ID          string
+	peer *wamp.Peer
+	Session     *wamp.Session
+	Broker      *Broker
+	Dealer      *Dealer
+	Newcomers   *wampShared.ObservableObject[*wamp.Peer]
+	KeyRing     *routerShared.KeyRing
+	Storage     routerShared.Storage
+	logger      *slog.Logger
+}
+
+func NewRouter(
+	ID string,
 	storage routerShared.Storage,
-	newcomers *wampShared.ObservableObject[*wamp.Peer],
-) {
-	log.Printf("[router] up...")
+	logger *slog.Logger,
+) *Router {
+	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
+	lPeer := wamp.SpawnPeer(ID, lTransport, logger)
+	rPeer := wamp.SpawnPeer(ID, rTransport, logger)
+	session := wamp.NewSession(rPeer, logger)
+	return &Router{
+		ID,
+		lPeer,
+		session,
+		NewBroker(session, storage, logger),
+		NewDealer(session, storage, logger),
+		wampShared.NewObservable[*wamp.Peer](),
+		routerShared.NewKeyRing(),
+		storage,
+		logger.With("name", "router"),
+	}
+}
 
-	broker := NewBroker(session, storage)
-	dealer := NewDealer(session, storage)
+func (router *Router) Serve() {
+	router.logger.Info("up...")
 
-	broker.Setup(dealer)
-	dealer.Setup(broker)
+	router.Broker.Setup(router.Dealer)
+	router.Dealer.Setup(router.Broker)
 
-	newcomers.Observe(
+	router.Newcomers.Observe(
 		func(peer *wamp.Peer) {
-			log.Printf("[router] attach peer (ID=%s)", peer.ID)
+			router.logger.Info("attach peer", "ID", peer.ID)
 			<-peer.Alive
-			log.Printf("[router] dettach peer (ID=%s)", peer.ID)
+			router.logger.Info("dettach peer", "ID", peer.ID)
 		},
-		func() { log.Printf("[router] down...") },
+		func() { router.logger.Info("down...") },
 	)
 
-	broker.Serve(newcomers)
-	dealer.Serve(newcomers)
+	router.Broker.Serve(router.Newcomers)
+	router.Dealer.Serve(router.Newcomers)
+
+	router.Newcomers.Next(router.peer)
+}
+
+func (router *Router) Shutdown() {
+	router.logger.Info("shutting down...")
+	router.Newcomers.Complete()
 }

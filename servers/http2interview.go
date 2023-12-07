@@ -1,7 +1,7 @@
 package routerServers
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,50 +13,60 @@ import (
 	routerShared "github.com/wamp3hub/wamp3router/shared"
 )
 
-func rpcAuthenticate(session *wamp.Session, credentials any) error {
-	pendingResponse, e := wamp.Call[string](session, &wamp.CallFeatures{URI: "wamp.authenticate"}, credentials)
-	_, role, e := pendingResponse.Await()
-	if e == nil {
-		log.Printf("authentication success role=%s", role)
-		return nil
-	} else if e.Error() == "ProcedureNotFound" {
-		log.Printf("[interview] please, register `wamp.authenticate`")
-		return nil
+func http2interviewMount(
+	session *wamp.Session,
+	keyRing *routerShared.KeyRing,
+	logger *slog.Logger,
+) http.Handler {
+	rpcAuthenticate := func(session *wamp.Session, credentials any) error {
+		pendingResponse := wamp.Call[string](
+			session,
+			&wamp.CallFeatures{URI: "wamp.authenticate"},
+			credentials,
+		)
+		_, role, e := pendingResponse.Await()
+		if e == nil {
+			logger.Info("authentication success", "Role", role)
+			return nil
+		} else if e.Error() == "ProcedureNotFound" {
+			logger.Error("please, register `wamp.authenticate`")
+			return nil
+		}
+		return e
 	}
-	return e
-}
 
-func http2interviewMount(session *wamp.Session, keyRing *routerShared.KeyRing) http.Handler {
 	onInterview := func(request *http.Request) (int, any) {
 		requestPayload := new(wampInterview.Payload)
 		e := readJSONBody(request.Body, requestPayload)
-		if e == nil {
-			e = rpcAuthenticate(session, requestPayload.Credentials)
-			if e == nil {
-				now := time.Now()
-				claims := routerShared.JWTClaims{
-					Issuer:    session.ID(),
-					Subject:   session.ID() + "-" + wampShared.NewID(),
-					ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
-					IssuedAt:  jwt.NewNumericDate(now),
-				}
-				ticket, e := keyRing.JWTSign(&claims)
-				if e == nil {
-					responsePayload := wampInterview.SuccessPayload{
-						RouterID: claims.Issuer,
-						YourID:   claims.Subject,
-						Ticket:   ticket,
-					}
-					log.Printf("[http2-interview] success (peer.ID=%s)", responsePayload.YourID)
-					return 200, responsePayload
-				}
-			}
+		if e != nil {
+			logger.Error("invalid payload", "error", e)
+			return 400, e
 		}
-		log.Printf("[http2-interview] error=%s", e)
-		return 400, e
+
+		e = rpcAuthenticate(session, requestPayload.Credentials)
+		if e != nil {
+			logger.Error("during authentication", "error", e)
+			return 400, e
+		}
+
+		now := time.Now()
+		claims := routerShared.JWTClaims{
+			Issuer:    session.ID(),
+			Subject:   session.ID() + "-" + wampShared.NewID(),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		}
+		ticket, _ := keyRing.JWTSign(&claims)
+		responsePayload := wampInterview.SuccessPayload{
+			RouterID: claims.Issuer,
+			YourID:   claims.Subject,
+			Ticket:   ticket,
+		}
+		logger.Debug("success", "peerID", responsePayload.YourID)
+		return 200, responsePayload
 	}
 
-	log.Print("[http2-interview] up...")
+	logger.Info("up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", jsonEndpoint(onInterview))
 	return serveMux

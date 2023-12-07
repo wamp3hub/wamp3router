@@ -1,7 +1,8 @@
 package router
 
 import (
-	"log"
+	"log/slog"
+	"time"
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
@@ -13,62 +14,60 @@ type Referee struct {
 	caller           *wamp.Peer
 	executor         *wamp.Peer
 	stopEventPromise wampShared.Promise[wamp.StopEvent]
+	logger           *slog.Logger
 }
 
 func (referee *Referee) stop() {
 	event := wamp.NewStopEvent(referee.ID)
 	features := event.Features()
 	features.VisitedRouters = append(features.VisitedRouters, referee.dealer.session.ID())
+
+	logData := slog.Group(
+		"generator",
+		"ID", referee.ID,
+		"CallerID", referee.caller.ID,
+		"ExecutorID", referee.executor.ID,
+	)
+
 	e := referee.executor.Send(event)
 	if e == nil {
-		log.Printf(
-			"[dealer] generator stop success (executor.ID=%s generator.ID=%s)",
-			referee.executor.ID, features.InvocationID,
-		)
+		referee.logger.Info("generator stop success", logData)
 	} else {
-		log.Printf(
-			"[dealer] generator stop error %s (executor.ID=%s generator.ID=%s)",
-			e, referee.executor.ID, features.InvocationID,
-		)
+		referee.logger.Error("during send cancel event", "error", e, logData)
 	}
 }
 
 func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 	nextFeatures := nextEvent.Features()
 
+	logData := slog.Group(
+		"generator",
+		"ID", referee.ID,
+		"CallerID", referee.caller.ID,
+		"ExecutorID", referee.executor.ID,
+		"nextEventID", nextEvent.ID(),
+	)
+
 	yieldEventPromise, cancelYieldEventPromise := referee.executor.PendingReplyEvents.New(
-		nextEvent.ID(), nextFeatures.Timeout,
+		nextEvent.ID(), time.Duration(nextFeatures.Timeout)*time.Second,
 	)
 
 	e := referee.executor.Send(nextEvent)
 	if e != nil {
 		cancelYieldEventPromise()
-
-		log.Printf(
-			"[dealer] send next error %s (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
-			e, referee.caller.ID, referee.executor.ID, nextEvent.ID(),
-		)
-
-		response := wamp.NewErrorEvent(nextEvent, wamp.SomethingWentWrong)
+		referee.logger.Error("during send next event", "error", e, logData)
+		response := wamp.NewErrorEvent(nextEvent, wamp.ErrorApplication)
 		referee.dealer.sendReply(referee.caller, response)
-
 		return e
 	}
 
-	log.Printf(
-		"[dealer] send next success (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
-		referee.caller.ID, referee.executor.ID, nextEvent.ID(),
-	)
+	referee.logger.Debug("next event sent", logData)
 
 	select {
 	case response, done := <-yieldEventPromise:
 		if !done {
-			log.Printf(
-				"[dealer] yield error (caller.ID=%s executor.ID=%s nextEvent.ID=%s)",
-				referee.caller.ID, referee.executor.ID, nextEvent.ID(),
-			)
-
-			response = wamp.NewErrorEvent(nextEvent, wamp.TimedOutError)
+			referee.logger.Debug("yield event timeout", logData)
+			response = wamp.NewErrorEvent(nextEvent, wamp.ErrorTimedOut)
 		} else if response.Kind() == wamp.MK_YIELD {
 			return referee.onYield(response)
 		}
@@ -76,7 +75,6 @@ func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 		referee.dealer.sendReply(referee.caller, response)
 	case <-referee.stopEventPromise:
 		cancelYieldEventPromise()
-
 		referee.stop()
 	}
 
@@ -86,36 +84,31 @@ func (referee *Referee) onNext(nextEvent wamp.NextEvent) error {
 func (referee *Referee) onYield(yieldEvent wamp.YieldEvent) error {
 	nextEventPromise, cancelNextEventPromise := referee.caller.PendingNextEvents.New(yieldEvent.ID(), 0)
 
+	logData := slog.Group(
+		"generator",
+		"ID", referee.ID,
+		"CallerID", referee.caller.ID,
+		"ExecutorID", referee.executor.ID,
+		"yieldEventID", yieldEvent.ID(),
+	)
+
 	e := referee.caller.Send(yieldEvent)
 	if e != nil {
 		cancelNextEventPromise()
-
-		log.Printf(
-			"[dealer] send yield error %s (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-			e, referee.caller.ID, referee.executor.ID, yieldEvent.ID(),
-		)
-
+		referee.logger.Error("during send yield event", "error", e, logData)
 		referee.stop()
-
 		return e
 	}
 
-	log.Printf(
-		"[dealer] send yield success (caller.ID=%s executor.ID=%s yieldEvent.ID=%s)",
-		referee.caller.ID, referee.executor.ID, yieldEvent.ID(),
-	)
+	referee.logger.Debug("yield event sent", logData)
 
 	select {
 	case nextEvent := <-nextEventPromise:
-		// TODO log
-
 		return referee.onNext(nextEvent)
 	case <-referee.stopEventPromise:
 		cancelNextEventPromise()
-
 		referee.stop()
 	}
-
 	return nil
 }
 
@@ -125,6 +118,7 @@ func loopGenerator(
 	executor *wamp.Peer,
 	callEvent wamp.CallEvent,
 	yieldEvent wamp.YieldEvent,
+	logger *slog.Logger,
 ) error {
 	generator := new(wamp.NewGeneratorPayload)
 	yieldEvent.Payload(generator)
@@ -134,17 +128,20 @@ func loopGenerator(
 	)
 
 	referee := Referee{
-		generator.ID, dealer, caller, executor, stopEventPromise,
+		generator.ID, dealer, caller, executor, stopEventPromise, logger,
 	}
 
 	e := referee.onYield(yieldEvent)
 
 	cancelStopEventPromise()
 
-	log.Printf(
-		"[dealer] destroy generator (caller.ID=%s executor.ID=%s)",
-		caller.ID, executor.ID,
+	logData := slog.Group(
+		"generator",
+		"ID", generator.ID,
+		"callerID", caller.ID,
+		"executorID", executor.ID,
 	)
+	logger.Debug("[dealer] destroy generator", logData)
 
 	return e
 }

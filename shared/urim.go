@@ -2,7 +2,7 @@ package routerShared
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -32,13 +32,15 @@ type URIM[T any] struct {
 	bucket  string
 	root    *URISegment[*wamp.Resource[T]]
 	storage Storage
+	logger  *slog.Logger
 }
 
-func NewURIM[T any](storage Storage) *URIM[T] {
+func NewURIM[T any](storage Storage, logger *slog.Logger) *URIM[T] {
 	return &URIM[T]{
 		wampShared.NewID(),
 		NewURISegment[*wamp.Resource[T]](nil),
 		storage,
+		logger,
 	}
 }
 
@@ -68,7 +70,7 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
 	e := urim.storage.Get(urim.bucket, ID, &resourceList)
 	if e != nil {
-		log.Printf("[urim] GetByAuthor %s", e)
+		urim.logger.Error("during get from storage", "error", e)
 	}
 	return resourceList
 }
@@ -104,7 +106,7 @@ func (urim *URIM[T]) DeleteByAuthor(ID string, resourceID string) ResourceList[T
 
 	e := urim.setByAuthor(ID, newResourceList)
 	if e != nil {
-		log.Printf("[urim] setByAuthor %s", e)
+		urim.logger.Error("during set to storage", "error", e)
 	}
 
 	return removedResourceList

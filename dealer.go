@@ -2,8 +2,9 @@ package router
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"sort"
+	"time"
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
@@ -16,6 +17,7 @@ type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
 type Dealer struct {
 	session       *wamp.Session
 	registrations *routerShared.URIM[*wamp.RegisterOptions]
+	logger        *slog.Logger
 	peers         map[string]*wamp.Peer
 	counter       map[string]int
 }
@@ -23,10 +25,12 @@ type Dealer struct {
 func NewDealer(
 	session *wamp.Session,
 	storage routerShared.Storage,
+	logger *slog.Logger,
 ) *Dealer {
 	return &Dealer{
 		session,
-		routerShared.NewURIM[*wamp.RegisterOptions](storage),
+		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
+		logger,
 		make(map[string]*wamp.Peer),
 		make(map[string]int),
 	}
@@ -37,6 +41,12 @@ func (dealer *Dealer) register(
 	authorID string,
 	options *wamp.RegisterOptions,
 ) (*wamp.Registration, error) {
+	logData := slog.Group(
+		"registration",
+		"URI", uri,
+		"AuthorID", authorID,
+	)
+
 	options.Route = append(options.Route, dealer.session.ID())
 	registration := wamp.Registration{
 		ID:       wampShared.NewID(),
@@ -45,21 +55,23 @@ func (dealer *Dealer) register(
 		Options:  options,
 	}
 	e := dealer.registrations.Add(&registration)
-	if e == nil {
-		e = wamp.Publish(
-			dealer.session,
-			&wamp.PublishFeatures{
-				URI:     "wamp.registration.new",
-				Exclude: []string{authorID},
-			},
-			registration,
-		)
-		if e == nil {
-			log.Printf("[dealer] new registeration URI=%s", uri)
-		}
-		return &registration, nil
+	if e != nil {
+		dealer.logger.Error("during add registration into URIM", logData)
+		return nil, e
 	}
-	return nil, e
+
+	e = wamp.Publish(
+		dealer.session,
+		&wamp.PublishFeatures{
+			URI:     "wamp.registration.new",
+			Exclude: []string{authorID},
+		},
+		registration,
+	)
+	if e == nil {
+		dealer.logger.Info("new registeration", logData)
+	}
+	return &registration, nil
 }
 
 func (dealer *Dealer) unregister(
@@ -68,6 +80,12 @@ func (dealer *Dealer) unregister(
 ) {
 	removedRegistrationList := dealer.registrations.DeleteByAuthor(authorID, registrationID)
 	for _, registration := range removedRegistrationList {
+		logData := slog.Group(
+			"registration",
+			"URI", registration.URI,
+			"AuthorID", registration.AuthorID,
+		)
+
 		e := wamp.Publish(
 			dealer.session,
 			&wamp.PublishFeatures{
@@ -77,7 +95,9 @@ func (dealer *Dealer) unregister(
 			registration.URI,
 		)
 		if e == nil {
-			log.Printf("[dealer] registration gone URI=%s", registration.URI)
+			dealer.logger.Info("registration gone", logData)
+		} else {
+			dealer.logger.Error("during publish to topic 'wamp.registration.gone'", logData)
 		}
 	}
 }
@@ -114,11 +134,19 @@ func (dealer *Dealer) sendReply(
 ) {
 	features := event.Features()
 	features.VisitedRouters = append(features.VisitedRouters, dealer.session.ID())
+
+	logData := slog.Group(
+		"response",
+		"CallerID", caller.ID,
+		"InvocationID", features.InvocationID,
+		"VisitedRouters", features.VisitedRouters,
+	)
+
 	e := caller.Send(event)
 	if e == nil {
-		log.Printf("[dealer] invocation processed successfully (caller.ID=%s, invocation.ID=%s)", caller.ID, features.InvocationID)
+		dealer.logger.Debug("invocation processed successfully", logData)
 	} else {
-		log.Printf("[dealer] reply not delivered %s (caller.ID=%s, invocation.ID=%s)", e, caller.ID, features.InvocationID)
+		dealer.logger.Error("during send reply event", "error", e, logData)
 	}
 }
 
@@ -127,25 +155,39 @@ func (dealer *Dealer) onCall(
 	callEvent wamp.CallEvent,
 ) error {
 	features := callEvent.Features()
-	log.Printf("[dealer] call (URI=%s caller.ID=%s timeout=%s)", features.URI, caller.ID, features.Timeout)
-
-	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
-		callEvent.ID(), features.Timeout,
-	)
+	timeout := time.Duration(features.Timeout) * time.Second
 
 	route := callEvent.Route()
 	route.CallerID = caller.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
 
+	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
+		callEvent.ID(), timeout,
+	)
+
+	requestLogData := slog.Group(
+		"event",
+		"ID", callEvent.ID,
+		"URI", features.URI,
+		"CallerID", caller.ID,
+		"Timeout", timeout,
+		"VisitedRouters", route.VisitedRouters,
+	)
+	dealer.logger.Info("call", requestLogData)
+
 	registrationList := dealer.matchRegistrations(features.URI)
 
 	for _, registration := range registrationList {
+		registrationLogData := slog.Group(
+			"subscription",
+			"ID", registration.ID,
+			"URI", registration.URI,
+			"SubscriberID", registration.AuthorID,
+		)
+
 		executor, exists := dealer.peers[registration.AuthorID]
 		if !exists {
-			log.Printf(
-				"[dealer] invalid registartion (peer not found) (registration.ID=%s peer.ID=%s URI=%s caller.ID=%s)",
-				features.URI, caller.ID, registration.ID, registration.AuthorID,
-			)
+			dealer.logger.Error("invalid registartion (peer not found)", registrationLogData, requestLogData)
 			continue
 		}
 
@@ -155,17 +197,11 @@ func (dealer *Dealer) onCall(
 		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
 		e := executor.Send(callEvent)
 		if e != nil {
-			log.Printf(
-				"[dealer] executor did not accept invocation (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s) %s",
-				features.URI, caller.ID, registration.AuthorID, registration.ID, e,
-			)
+			dealer.logger.Error("during send call event", "error", e, registrationLogData, requestLogData)
 			continue
 		}
 
-		log.Printf(
-			"[dealer] executor (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-			features.URI, caller.ID, registration.AuthorID, registration.ID,
-		)
+		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
 
 		select {
 		case cancelEvent, done := <-cancelCallEventPromise:
@@ -176,30 +212,21 @@ func (dealer *Dealer) onCall(
 				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.session.ID())
 				e := executor.Send(cancelEvent)
 				if e == nil {
-					log.Printf(
-						"[dealer] call event successfully cancelled (executor.ID=%s invocation.ID=%s)",
-						executor.ID, cancelFeatures.InvocationID,
-					)
+					dealer.logger.Info("call event cancelled", registrationLogData, requestLogData)
 				} else {
-					log.Printf(
-						"[dealer] cancel error %s (executor.ID=%s invocation.ID=%s)",
-						e, executor.ID, cancelFeatures.InvocationID,
-					)
+					dealer.logger.Error("during send cancel event", registrationLogData, requestLogData)
 				}
 			} else {
-				log.Printf(
-					"[dealer] executor did not respond (URI=%s caller.ID=%s executor.ID=%s registration.ID=%s)",
-					features.URI, caller.ID, executor.ID, registration.ID,
-				)
+				dealer.logger.Debug("call event timeout", registrationLogData, requestLogData)
 
-				response := wamp.NewErrorEvent(callEvent, wamp.TimedOutError)
+				response := wamp.NewErrorEvent(callEvent, wamp.ErrorTimedOut)
 				dealer.sendReply(caller, response)
 			}
 		case response := <-replyEventPromise:
 			cancelCancelEventPromise()
 
 			if response.Kind() == wamp.MK_YIELD {
-				loopGenerator(dealer, caller, executor, callEvent, response)
+				loopGenerator(dealer, caller, executor, callEvent, response, dealer.logger)
 			} else {
 				dealer.sendReply(caller, response)
 			}
@@ -210,7 +237,7 @@ func (dealer *Dealer) onCall(
 
 	cancelCancelEventPromise()
 
-	log.Printf("[dealer] procedure not found (URI=%s caller.ID=%s)", features.URI, caller.ID)
+	dealer.logger.Debug("procedure not found", requestLogData)
 	response := wamp.NewErrorEvent(callEvent, errors.New("ProcedureNotFound"))
 	dealer.sendReply(caller, response)
 
@@ -220,11 +247,11 @@ func (dealer *Dealer) onCall(
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 	dealer.unregister(peer.ID, "")
 	delete(dealer.peers, peer.ID)
-	log.Printf("[dealer] dettach peer (ID=%s)", peer.ID)
+	dealer.logger.Info("dettach peer", "ID", peer.ID)
 }
 
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
-	log.Printf("[dealer] attach peer (ID=%s)", peer.ID)
+	dealer.logger.Info("attach peer", "ID", peer.ID)
 	dealer.peers[peer.ID] = peer
 	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
@@ -233,10 +260,10 @@ func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 }
 
 func (dealer *Dealer) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
-	log.Printf("[dealer] up...")
+	dealer.logger.Info("up...")
 	newcomers.Observe(
 		dealer.onJoin,
-		func() { log.Printf("[dealer] down...") },
+		func() { dealer.logger.Info("down...") },
 	)
 }
 
@@ -244,116 +271,108 @@ func (dealer *Dealer) Setup(broker *Broker) {
 	mount := func(
 		uri string,
 		options *wamp.RegisterOptions,
-		procedure func(callEvent wamp.CallEvent) wamp.ReplyEvent,
+		procedure wamp.CallProcedure,
 	) {
 		registration, _ := dealer.register(uri, dealer.session.ID(), options)
-		endpoint := wamp.NewCallEventEndpoint(procedure)
+		endpoint := wamp.NewCallEventEndpoint(procedure, broker.logger)
 		dealer.session.Registrations[registration.ID] = endpoint
 	}
 
 	mount(
 		"wamp.router.register",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			route := callEvent.Route()
 			payload := new(wamp.NewResourcePayload[wamp.RegisterOptions])
 			e := callEvent.Payload(payload)
 			if e == nil && len(payload.URI) > 0 {
 				registration, e := dealer.register(payload.URI, route.CallerID, payload.Options)
 				if e == nil {
-					return wamp.NewReplyEvent(callEvent, *registration)
+					return registration
 				}
 			} else {
 				e = errors.New("InvalidPayload")
 			}
-			return wamp.NewErrorEvent(callEvent, e)
+			return e
 		},
 	)
 
 	mount(
 		"wamp.router.subscribe",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			route := callEvent.Route()
 			payload := new(wamp.NewResourcePayload[wamp.SubscribeOptions])
 			e := callEvent.Payload(payload)
 			if e == nil && len(payload.URI) > 0 {
 				subscription, e := broker.subscribe(payload.URI, route.CallerID, payload.Options)
 				if e == nil {
-					return wamp.NewReplyEvent(callEvent, *subscription)
+					return subscription
 				}
 			} else {
 				e = errors.New("InvalidPayload")
 			}
-			return wamp.NewErrorEvent(callEvent, e)
+			return e
 		},
 	)
 
 	mount(
 		"wamp.router.unregister",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			route := callEvent.Route()
 			registrationID := ""
 			e := callEvent.Payload(&registrationID)
 			if e == nil && len(registrationID) > 0 {
 				dealer.unregister(route.CallerID, registrationID)
-				return wamp.NewReplyEvent(callEvent, struct{}{})
+				return nil
 			}
-			return wamp.NewErrorEvent(callEvent, e)
+			return e
 		},
 	)
 
 	mount(
 		"wamp.router.unsubscribe",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			route := callEvent.Route()
 			subscriptionID := ""
 			e := callEvent.Payload(&subscriptionID)
 			if e == nil && len(subscriptionID) > 0 {
 				broker.unsubscribe(route.CallerID, subscriptionID)
-				return wamp.NewReplyEvent(callEvent, struct{}{})
+				return nil
 			}
-			return wamp.NewErrorEvent(callEvent, e)
+			return e
 		},
 	)
 
 	mount(
 		"wamp.router.registration.list",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			source := wamp.Event(callEvent)
 			URIList := dealer.registrations.DumpURIList()
 			for _, uri := range URIList {
 				registrationList := dealer.registrations.Match(uri)
-				nextEvent, e := wamp.Yield(source, registrationList)
-				if e == nil {
-					source = nextEvent
-				} else {
-					break
-				}
+				nextEvent := wamp.Yield(source, registrationList)
+				source = nextEvent
 			}
-			return wamp.GeneratorExit(source)
+			return wamp.ExitGenerator
 		},
 	)
 
 	mount(
 		"wamp.router.subscription.list",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+		func(callEvent wamp.CallEvent) any {
 			source := wamp.Event(callEvent)
 			URIList := broker.subscriptions.DumpURIList()
 			for _, uri := range URIList {
 				subscriptionList := broker.subscriptions.Match(uri)
-				nextEvent, e := wamp.Yield(source, subscriptionList)
-				if e == nil {
-					source = nextEvent
-				} else {
-					break
-				}
+				nextEvent := wamp.Yield(source, subscriptionList)
+				source = nextEvent
 			}
-			return wamp.GeneratorExit(source)
+			return wamp.ExitGenerator
 		},
 	)
 }
