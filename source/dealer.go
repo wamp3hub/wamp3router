@@ -8,7 +8,7 @@ import (
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]

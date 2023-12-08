@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/cobra"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
-	router "github.com/wamp3hub/wamp3router"
-	routerServers "github.com/wamp3hub/wamp3router/servers"
-	routerShared "github.com/wamp3hub/wamp3router/shared"
-	routerStorages "github.com/wamp3hub/wamp3router/storages"
+	router "github.com/wamp3hub/wamp3router/source"
+	routerServers "github.com/wamp3hub/wamp3router/source/servers"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
+	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
 func Run(

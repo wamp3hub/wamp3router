@@ -11,7 +11,7 @@ import (
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 func http2websocketMount(

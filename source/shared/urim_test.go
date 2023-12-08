@@ -6,8 +6,8 @@ import (
 
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	routerShared "github.com/wamp3hub/wamp3router/shared"
-	routerStorages "github.com/wamp3hub/wamp3router/storages"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
+	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
 func TestURIM(t *testing.T) {

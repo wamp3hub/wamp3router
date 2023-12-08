@@ -10,7 +10,7 @@ import (
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampInterview "github.com/wamp3hub/wamp3go/transports/interview"
 
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 func http2interviewMount(

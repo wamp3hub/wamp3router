@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	wampInterview "github.com/wamp3hub/wamp3go/transports/interview"
-	router "github.com/wamp3hub/wamp3router"
+	router "github.com/wamp3hub/wamp3router/source"
 )
 
 var readJSONBody = wampInterview.ReadJSONBody

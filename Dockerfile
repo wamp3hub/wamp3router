@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 
 RUN go mod download
 
-COPY . ./
+COPY ./source/ ./
 
 RUN go build -o /docker-wamp3rd
 

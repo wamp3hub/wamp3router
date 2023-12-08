@@ -9,8 +9,8 @@ import (
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
-	router "github.com/wamp3hub/wamp3router"
-	routerStorages "github.com/wamp3hub/wamp3router/storages"
+	router "github.com/wamp3hub/wamp3router/source"
+	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
 func runRouter() *wampShared.ObservableObject[*wamp.Peer] {

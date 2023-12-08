@@ -10,7 +10,7 @@ import (
 	wampSerializers "github.com/wamp3hub/wamp3go/serializers"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
-	router "github.com/wamp3hub/wamp3router"
+	router "github.com/wamp3hub/wamp3router/source"
 )
 
 type UnixServer struct {
