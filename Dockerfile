@@ -11,6 +11,6 @@ RUN go mod download
 
 COPY ./source/ ./
 
-RUN go build -o /docker-wamp3rd
+RUN go build -C daemon -o wamp3rd
 
-CMD ["/docker-wamp3rd"]
+CMD ./daemon/wamp3rd run
