@@ -12,8 +12,8 @@ import (
 type SubscriptionList = routerShared.ResourceList[*wamp.SubscribeOptions]
 
 type Broker struct {
-	session       *wamp.Session
 	subscriptions *routerShared.URIM[*wamp.SubscribeOptions]
+	session       *wamp.Session
 	logger        *slog.Logger
 	peers         map[string]*wamp.Peer
 }
@@ -24,9 +24,9 @@ func NewBroker(
 	logger *slog.Logger,
 ) *Broker {
 	return &Broker{
-		session,
 		routerShared.NewURIM[*wamp.SubscribeOptions](storage, logger),
-		logger,
+		session,
+		logger.With("name", "Broker"),
 		make(map[string]*wamp.Peer),
 	}
 }
@@ -136,7 +136,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 		)
 
 		if excludeSet.Contains(subscription.AuthorID) {
-			broker.logger.Debug("exlude subscriber", subscriptionLogData, requestLogData)
+			broker.logger.Debug("exclude subscriber", subscriptionLogData, requestLogData)
 			continue
 		}
 
@@ -181,7 +181,4 @@ func (broker *Broker) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) 
 		broker.onJoin,
 		func() { broker.logger.Info("down...") },
 	)
-}
-
-func (broker *Broker) Setup(dealer *Dealer) {
 }

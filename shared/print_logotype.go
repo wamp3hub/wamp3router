@@ -19,5 +19,5 @@ const logotype = `
 `
 
 func PrintLogotype() {
-	fmt.Println(logotype)
+	fmt.Print(logotype)
 }

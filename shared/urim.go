@@ -40,7 +40,7 @@ func NewURIM[T any](storage Storage, logger *slog.Logger) *URIM[T] {
 		wampShared.NewID(),
 		NewURISegment[*wamp.Resource[T]](nil),
 		storage,
-		logger,
+		logger.With("name", "URIM"),
 	}
 }
 
@@ -70,7 +70,7 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 	resourceList := ResourceList[T]{}
 	e := urim.storage.Get(urim.bucket, ID, &resourceList)
 	if e != nil {
-		urim.logger.Error("during get from storage", "error", e)
+		urim.logger.Warn("during get from storage", "error", e)
 	}
 	return resourceList
 }

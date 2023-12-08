@@ -118,8 +118,10 @@ func loopGenerator(
 	executor *wamp.Peer,
 	callEvent wamp.CallEvent,
 	yieldEvent wamp.YieldEvent,
-	logger *slog.Logger,
+	__logger *slog.Logger,
 ) error {
+	logger := __logger.With("name", "Referee")
+
 	generator := new(wamp.NewGeneratorPayload)
 	yieldEvent.Payload(generator)
 
@@ -127,9 +129,7 @@ func loopGenerator(
 		generator.ID, wamp.DEFAULT_GENERATOR_LIFETIME,
 	)
 
-	referee := Referee{
-		generator.ID, dealer, caller, executor, stopEventPromise, logger,
-	}
+	referee := Referee{generator.ID, dealer, caller, executor, stopEventPromise, logger}
 
 	e := referee.onYield(yieldEvent)
 
@@ -141,7 +141,7 @@ func loopGenerator(
 		"callerID", caller.ID,
 		"executorID", executor.ID,
 	)
-	logger.Debug("[dealer] destroy generator", logData)
+	logger.Debug("destroy generator", logData)
 
 	return e
 }

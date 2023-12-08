@@ -36,7 +36,7 @@ func NewUnixServer(
 func (server *UnixServer) onConnect(
 	connection net.Conn,
 ) error {
-	server.logger.Info("new connection", "clientAddress", connection.RemoteAddr())
+	server.logger.Info("new unix connection", "clientAddress", connection.RemoteAddr())
 	transport := wampTransports.UnixTransport(wampSerializers.DefaultSerializer, connection)
 	routerID := server.router.Session.ID()
 	serverMessage := wampTransports.UnixServerMessage{
@@ -52,8 +52,8 @@ func (server *UnixServer) onConnect(
 			e = json.Unmarshal(rawClientMessage, clientMessage)
 			if e == nil {
 				peer := wamp.SpawnPeer(serverMessage.YourID, transport, server.logger)
-				server.router.Newcomers.Next(peer)
 				server.logger.Info("new peer", "ID", peer.ID)
+				server.router.Newcomers.Next(peer)
 			}
 		}
 	}

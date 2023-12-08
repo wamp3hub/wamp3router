@@ -17,8 +17,10 @@ import (
 func http2websocketMount(
 	keyRing *routerShared.KeyRing,
 	newcomers *wampShared.ObservableObject[*wamp.Peer],
-	logger *slog.Logger,
+	__logger *slog.Logger,
 ) http.Handler {
+	logger := __logger.With("name", "http2websocket")
+
 	websocketUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true

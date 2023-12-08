@@ -16,9 +16,11 @@ import (
 func http2interviewMount(
 	session *wamp.Session,
 	keyRing *routerShared.KeyRing,
-	logger *slog.Logger,
+	__logger *slog.Logger,
 ) http.Handler {
-	rpcAuthenticate := func(session *wamp.Session, credentials any) error {
+	logger := __logger.With("server", "http2interview")
+
+	authenticate := func(session *wamp.Session, credentials any) error {
 		pendingResponse := wamp.Call[string](
 			session,
 			&wamp.CallFeatures{URI: "wamp.authenticate"},
@@ -29,7 +31,7 @@ func http2interviewMount(
 			logger.Info("authentication success", "Role", role)
 			return nil
 		} else if e.Error() == "ProcedureNotFound" {
-			logger.Error("please, register `wamp.authenticate`")
+			logger.Warn("please, register `wamp.authenticate`")
 			return nil
 		}
 		return e
@@ -43,7 +45,7 @@ func http2interviewMount(
 			return 400, e
 		}
 
-		e = rpcAuthenticate(session, requestPayload.Credentials)
+		e = authenticate(session, requestPayload.Credentials)
 		if e != nil {
 			logger.Error("during authentication", "error", e)
 			return 400, e

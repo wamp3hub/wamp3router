@@ -15,15 +15,15 @@ type Server interface {
 }
 
 type Router struct {
-	ID          string
-	peer *wamp.Peer
-	Session     *wamp.Session
-	Broker      *Broker
-	Dealer      *Dealer
-	Newcomers   *wampShared.ObservableObject[*wamp.Peer]
-	KeyRing     *routerShared.KeyRing
-	Storage     routerShared.Storage
-	logger      *slog.Logger
+	ID        string
+	peer      *wamp.Peer
+	Session   *wamp.Session
+	KeyRing   *routerShared.KeyRing
+	Storage   routerShared.Storage
+	Broker    *Broker
+	Dealer    *Dealer
+	Newcomers *wampShared.ObservableObject[*wamp.Peer]
+	logger    *slog.Logger
 }
 
 func NewRouter(
@@ -39,20 +39,17 @@ func NewRouter(
 		ID,
 		lPeer,
 		session,
+		routerShared.NewKeyRing(),
+		storage,
 		NewBroker(session, storage, logger),
 		NewDealer(session, storage, logger),
 		wampShared.NewObservable[*wamp.Peer](),
-		routerShared.NewKeyRing(),
-		storage,
-		logger.With("name", "router"),
+		logger.With("name", "Router"),
 	}
 }
 
 func (router *Router) Serve() {
 	router.logger.Info("up...")
-
-	router.Broker.Setup(router.Dealer)
-	router.Dealer.Setup(router.Broker)
 
 	router.Newcomers.Observe(
 		func(peer *wamp.Peer) {
@@ -67,6 +64,13 @@ func (router *Router) Serve() {
 	router.Dealer.Serve(router.Newcomers)
 
 	router.Newcomers.Next(router.peer)
+
+	mount[wamp.Registration](router, "wamp.router.register", &wamp.RegisterOptions{}, router.register)
+	mount[bool](router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.unregister)
+	mount[RegistrationList](router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.getRegistrationList)
+	mount[wamp.Subscription](router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.subscribe)
+	mount[bool](router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.unsubscribe)
+	mount[SubscriptionList](router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.getSubscriptionList)
 }
 
 func (router *Router) Shutdown() {
