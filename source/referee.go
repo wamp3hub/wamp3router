@@ -126,7 +126,7 @@ func loopGenerator(
 	yieldEvent.Payload(generator)
 
 	stopEventPromise, cancelStopEventPromise := executor.PendingCancelEvents.New(
-		generator.ID, wamp.DEFAULT_GENERATOR_LIFETIME,
+		generator.ID, time.Duration(wamp.DEFAULT_GENERATOR_LIFETIME) * time.Second,
 	)
 
 	referee := Referee{generator.ID, dealer, caller, executor, stopEventPromise, logger}

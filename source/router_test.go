@@ -198,7 +198,7 @@ func TestGenerator(t *testing.T) {
 				return wamp.InvalidPayload
 			}
 			source := wamp.Event(callEvent)
-			for i := n; i > 0; i-- {
+			for i := n; i > -1; i-- {
 				source = wamp.Yield(source, i)
 			}
 			return wamp.ExitGenerator
