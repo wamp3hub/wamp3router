@@ -53,17 +53,13 @@ func TestSubscribePublish(t *testing.T) {
 			alphaSession,
 			"net.example",
 			&wamp.SubscribeOptions{},
-			func(publishEvent wamp.PublishEvent) {
-				var message string
-				e := publishEvent.Payload(&message)
-				if e == nil {
-					t.Logf("new message %s", message)
-					wg.Done()
-				}
+			func(message string, publishEvent wamp.PublishEvent) {
+				t.Logf("new message %s", message)
+				wg.Done()
 			},
 		)
 		if e == nil {
-			t.Log("subscribe success")
+			t.Logf("subscribe success ID=%s", subscription.ID)
 		} else {
 			t.Fatalf("subscribe error %s", e)
 		}
@@ -72,7 +68,9 @@ func TestSubscribePublish(t *testing.T) {
 
 		e = wamp.Publish(
 			betaSession,
-			&wamp.PublishFeatures{URI: "net.example"}, "Hello, I'm session beta!")
+			&wamp.PublishFeatures{URI: "net.example"},
+			"Hello, I'm session beta!",
+		)
 		if e == nil {
 			t.Logf("publish success")
 		} else {
@@ -97,18 +95,13 @@ func TestRPC(t *testing.T) {
 		alphaSession := joinSession(nextNewcomer)
 		betaSession := joinSession(nextNewcomer)
 
-		registration, e := wamp.Register[string](
+		registration, e := wamp.Register(
 			alphaSession,
 			"net.example.greeting",
 			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) any {
-				var name string
-				e := callEvent.Payload(&name)
-				if e == nil {
-					result := "Hello, " + name + "!"
-					return result
-				}
-				return wamp.InvalidPayload
+			func(name string, callEvent wamp.CallEvent) (string, error) {
+				result := "Hello, " + name + "!"
+				return result, nil
 			},
 		)
 		if e == nil {
@@ -142,13 +135,13 @@ func TestRPC(t *testing.T) {
 		alphaSession := joinSession(nextNewcomer)
 		betaSession := joinSession(nextNewcomer)
 
-		_, e := wamp.Register[bool](
+		_, e := wamp.Register(
 			alphaSession,
 			"net.example.long",
 			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) any {
+			func(payload any, callEvent wamp.CallEvent) (struct{}, error) {
 				time.Sleep(time.Minute)
-				return true
+				return struct{}{}, nil
 			},
 		)
 		if e == nil {
@@ -187,21 +180,16 @@ func TestGenerator(t *testing.T) {
 
 	alphaSession := joinSession(nextNewcomer)
 
-	_, e := wamp.Register[int](
+	_, e := wamp.Register(
 		alphaSession,
 		"net.example.reverse",
 		&wamp.RegisterOptions{},
-		func(callEvent wamp.CallEvent) any {
-			var n int
-			e := callEvent.Payload(&n)
-			if e != nil {
-				return wamp.InvalidPayload
-			}
+		func(n int, callEvent wamp.CallEvent) (int, error) {
 			source := wamp.Event(callEvent)
 			for i := n; i > -1; i-- {
 				source = wamp.Yield(source, i)
 			}
-			return wamp.ExitGenerator
+			return -1, wamp.GeneratorExit(source)
 		},
 	)
 	if e == nil {
@@ -227,6 +215,8 @@ func TestGenerator(t *testing.T) {
 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
 			if e == nil {
 				t.Logf("result %d", result)
+			} else if e.Error() == "GeneratorExit" {
+				t.Logf("generator done")
 			} else {
 				t.Fatalf("generator error %s", e)
 			}
@@ -250,6 +240,8 @@ func TestGenerator(t *testing.T) {
 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
 			if e == nil {
 				t.Logf("result %d", result)
+			} else if e.Error() == "GeneratorExit" {
+				t.Logf("generator done")
 			} else {
 				t.Fatalf("generator error %s", e)
 			}

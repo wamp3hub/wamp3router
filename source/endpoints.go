@@ -1,45 +1,52 @@
 package router
 
-import wamp "github.com/wamp3hub/wamp3go"
+import (
+	"errors"
 
-func mount[O any](
+	wamp "github.com/wamp3hub/wamp3go"
+)
+
+func mount[I, O any](
 	router *Router,
 	uri string,
 	options *wamp.RegisterOptions,
-	procedure wamp.CallProcedure,
+	procedure wamp.CallProcedure[I, O],
 ) {
 	registration, _ := router.Dealer.register(uri, router.Session.ID(), options)
-	endpoint := wamp.NewCallEventEndpoint[O](procedure, router.logger)
+	endpoint := wamp.NewCallEventEndpoint[I, O](procedure, router.logger)
 	router.Session.Registrations[registration.ID] = endpoint
 }
 
-func (router *Router) register(callEvent wamp.CallEvent) any {
+func (router *Router) register(
+	payload wamp.NewResourcePayload[wamp.RegisterOptions],
+	callEvent wamp.CallEvent,
+) (*wamp.Registration, error) {
 	route := callEvent.Route()
-	payload := new(wamp.NewResourcePayload[wamp.RegisterOptions])
-	e := callEvent.Payload(payload)
-	if e == nil && len(payload.URI) > 0 {
+	if len(payload.URI) > 0 {
 		registration, e := router.Dealer.register(payload.URI, route.CallerID, payload.Options)
 		if e == nil {
-			return *registration
+			return registration, nil
 		}
-	} else {
-		e = wamp.InvalidPayload
 	}
-	return e
+	return nil, errors.New("InvalidURI")
 }
 
-func (router *Router) unregister(callEvent wamp.CallEvent) any {
+func (router *Router) unregister(
+	registrationID string,
+	callEvent wamp.CallEvent,
+) (struct{}, error) {
 	route := callEvent.Route()
-	registrationID := ""
-	e := callEvent.Payload(&registrationID)
-	if e == nil && len(registrationID) > 0 {
+	if len(registrationID) > 0 {
 		router.Dealer.unregister(route.CallerID, registrationID)
-		return true
+		return struct{}{}, nil
 	}
-	return e
+	return struct{}{}, wamp.InvalidPayload
 }
 
-func (router *Router) getRegistrationList(callEvent wamp.CallEvent) any {
+func (router *Router) getRegistrationList(
+	payload any,
+	callEvent wamp.CallEvent,
+) (*RegistrationList, error) {
 	source := wamp.Event(callEvent)
 	URIList := router.Dealer.registrations.DumpURIList()
 	for _, uri := range URIList {
@@ -47,36 +54,39 @@ func (router *Router) getRegistrationList(callEvent wamp.CallEvent) any {
 		nextEvent := wamp.Yield(source, registrationList)
 		source = nextEvent
 	}
-	return wamp.ExitGenerator
+	return nil, wamp.GeneratorExit(source)
 }
 
-func (router *Router) subscribe(callEvent wamp.CallEvent) any {
+func (router *Router) subscribe(
+	payload wamp.NewResourcePayload[wamp.SubscribeOptions],
+	callEvent wamp.CallEvent,
+) (*wamp.Subscription, error) {
 	route := callEvent.Route()
-	payload := new(wamp.NewResourcePayload[wamp.SubscribeOptions])
-	e := callEvent.Payload(payload)
-	if e == nil && len(payload.URI) > 0 {
+	if len(payload.URI) > 0 {
 		subscription, e := router.Broker.subscribe(payload.URI, route.CallerID, payload.Options)
 		if e == nil {
-			return *subscription
+			return subscription, nil
 		}
-	} else {
-		e = wamp.InvalidPayload
 	}
-	return e
+	return nil, errors.New("InvalidURI")
 }
 
-func (router *Router) unsubscribe(callEvent wamp.CallEvent) any {
+func (router *Router) unsubscribe(
+	subscriptionID string,
+	callEvent wamp.CallEvent,
+) (struct{}, error) {
 	route := callEvent.Route()
-	subscriptionID := ""
-	e := callEvent.Payload(&subscriptionID)
-	if e == nil && len(subscriptionID) > 0 {
+	if len(subscriptionID) > 0 {
 		router.Broker.unsubscribe(route.CallerID, subscriptionID)
-		return true
+		return struct{}{}, nil
 	}
-	return e
+	return struct{}{}, wamp.InvalidPayload
 }
 
-func (router *Router) getSubscriptionList(callEvent wamp.CallEvent) any {
+func (router *Router) getSubscriptionList(
+	payload any,
+	callEvent wamp.CallEvent,
+) (*SubscriptionList, error) {
 	source := wamp.Event(callEvent)
 	URIList := router.Broker.subscriptions.DumpURIList()
 	for _, uri := range URIList {
@@ -84,5 +94,5 @@ func (router *Router) getSubscriptionList(callEvent wamp.CallEvent) any {
 		nextEvent := wamp.Yield(source, subscriptionList)
 		source = nextEvent
 	}
-	return wamp.ExitGenerator
+	return nil, wamp.GeneratorExit(source)
 }

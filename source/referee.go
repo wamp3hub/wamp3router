@@ -122,8 +122,8 @@ func loopGenerator(
 ) error {
 	logger := __logger.With("name", "Referee")
 
-	generator := new(wamp.NewGeneratorPayload)
-	yieldEvent.Payload(generator)
+	payload := yieldEvent.Payload()
+	generator := payload.(wamp.NewGeneratorPayload)
 
 	stopEventPromise, cancelStopEventPromise := executor.PendingCancelEvents.New(
 		generator.ID, time.Duration(wamp.DEFAULT_GENERATOR_LIFETIME) * time.Second,

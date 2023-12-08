@@ -65,12 +65,12 @@ func (router *Router) Serve() {
 
 	router.Newcomers.Next(router.peer)
 
-	mount[wamp.Registration](router, "wamp.router.register", &wamp.RegisterOptions{}, router.register)
-	mount[bool](router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.unregister)
-	mount[RegistrationList](router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.getRegistrationList)
-	mount[wamp.Subscription](router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.subscribe)
-	mount[bool](router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.unsubscribe)
-	mount[SubscriptionList](router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.getSubscriptionList)
+	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.register)
+	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.unregister)
+	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.getRegistrationList)
+	mount(router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.subscribe)
+	mount(router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.unsubscribe)
+	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.getSubscriptionList)
 }
 
 func (router *Router) Shutdown() {
