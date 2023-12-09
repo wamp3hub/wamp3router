@@ -31,7 +31,7 @@ func (referee *Referee) stop() {
 
 	e := referee.executor.Send(event)
 	if e == nil {
-		referee.logger.Info("generator stop success", logData)
+		referee.logger.Debug("generator stop success", logData)
 	} else {
 		referee.logger.Error("during send cancel event", "error", e, logData)
 	}
@@ -122,11 +122,10 @@ func loopGenerator(
 ) error {
 	logger := __logger.With("name", "Referee")
 
-	payload := yieldEvent.Payload()
-	generator := payload.(wamp.NewGeneratorPayload)
+	generator, _ := wamp.SerializePayload[wamp.NewGeneratorPayload](yieldEvent)
 
 	stopEventPromise, cancelStopEventPromise := executor.PendingCancelEvents.New(
-		generator.ID, time.Duration(wamp.DEFAULT_GENERATOR_LIFETIME) * time.Second,
+		generator.ID, time.Duration(wamp.DEFAULT_GENERATOR_LIFETIME)*time.Second,
 	)
 
 	referee := Referee{generator.ID, dealer, caller, executor, stopEventPromise, logger}

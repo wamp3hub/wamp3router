@@ -120,7 +120,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 		"PublisherID", publisher.ID,
 		"VisitedRouters", route.VisitedRouters,
 	)
-	broker.logger.Info("publish", requestLogData)
+	broker.logger.Debug("publish", requestLogData)
 
 	// includeSet := NewSet(features.Include)
 	excludeSet := routerShared.NewSet(features.Exclude)

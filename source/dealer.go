@@ -172,7 +172,7 @@ func (dealer *Dealer) onCall(
 		"Timeout", timeout,
 		"VisitedRouters", route.VisitedRouters,
 	)
-	dealer.logger.Info("call", requestLogData)
+	dealer.logger.Debug("call", requestLogData)
 
 	registrationList := dealer.matchRegistrations(features.URI)
 
