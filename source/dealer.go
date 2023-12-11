@@ -226,7 +226,7 @@ func (dealer *Dealer) onCall(
 			cancelCancelEventPromise()
 
 			if response.Kind() == wamp.MK_YIELD {
-				loopGenerator(dealer, caller, executor, callEvent, response, dealer.logger)
+				loopGenerator(dealer.session, caller, executor, callEvent, response, dealer.logger)
 			} else {
 				dealer.sendReply(caller, response)
 			}
