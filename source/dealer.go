@@ -69,6 +69,8 @@ func (dealer *Dealer) register(
 	)
 	if e == nil {
 		dealer.logger.Info("new registeration", logData)
+	} else {
+		dealer.logger.Error("during publish to topic 'wamp.registration.new'", logData)
 	}
 	return &registration, nil
 }
@@ -199,7 +201,6 @@ func (dealer *Dealer) onCall(
 			dealer.logger.Error("during send call event", "error", e, registrationLogData, requestLogData)
 			continue
 		}
-
 		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
 
 		select {

@@ -16,7 +16,7 @@ type Server interface {
 
 type Router struct {
 	ID        string
-	peer      *wamp.Peer
+	mainPeer  *wamp.Peer
 	Session   *wamp.Session
 	KeyRing   *routerShared.KeyRing
 	Storage   routerShared.Storage
@@ -63,7 +63,7 @@ func (router *Router) Serve() {
 	router.Broker.Serve(router.Newcomers)
 	router.Dealer.Serve(router.Newcomers)
 
-	router.Newcomers.Next(router.peer)
+	router.Newcomers.Next(router.mainPeer)
 
 	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.register)
 	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.unregister)

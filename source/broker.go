@@ -65,6 +65,8 @@ func (broker *Broker) subscribe(
 	)
 	if e == nil {
 		broker.logger.Info("new subscription", logData)
+	} else {
+		broker.logger.Error("during publish to 'wamp.subscription.new'", "error", e, logData)
 	}
 	return &subscription, nil
 }
@@ -92,7 +94,7 @@ func (broker *Broker) unsubscribe(
 		if e == nil {
 			broker.logger.Info("subscription gone", logData)
 		} else {
-			broker.logger.Info("during publish to 'wamp.subscription.gone'", logData)
+			broker.logger.Error("during publish to 'wamp.subscription.gone'", logData)
 		}
 	}
 }
@@ -122,7 +124,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 	)
 	broker.logger.Debug("publish", requestLogData)
 
-	// includeSet := NewSet(features.Include)
+	includeSet := routerShared.NewSet(features.Include)
 	excludeSet := routerShared.NewSet(features.Exclude)
 
 	subscriptionList := broker.matchSubscriptions(features.URI)
@@ -135,7 +137,7 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 			"SubscriberID", subscription.AuthorID,
 		)
 
-		if excludeSet.Contains(subscription.AuthorID) {
+		if excludeSet.Contains(subscription.AuthorID) || (includeSet.Size() > 0 && !includeSet.Contains(subscription.AuthorID)) {
 			broker.logger.Debug("exclude subscriber", subscriptionLogData, requestLogData)
 			continue
 		}
