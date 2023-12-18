@@ -3,7 +3,7 @@ package routerShared_test
 import (
 	"testing"
 
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 func TestSet(t *testing.T) {

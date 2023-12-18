@@ -7,6 +7,10 @@ import (
 	"errors"
 )
 
+var (
+	ErrorInvalidRSA = errors.New("key type is not RSA")
+)
+
 func RSAPublicKeyEncode(v *rsa.PublicKey) ([]byte, error) {
 	vbytes, e := x509.MarshalPKIXPublicKey(v)
 	if e == nil {
@@ -28,7 +32,7 @@ func RSAPublicKeyDecode(v []byte) (*rsa.PublicKey, error) {
 		if ok {
 			return publicKey, nil
 		}
-		e = errors.New("key type is not RSA")
+		e = ErrorInvalidRSA
 	}
 	return nil, e
 }

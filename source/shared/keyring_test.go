@@ -6,7 +6,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 func TestKeyRing(t *testing.T) {

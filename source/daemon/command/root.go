@@ -3,8 +3,8 @@ package command
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/wamp3hub/wamp3router/daemon/command/generateTicket"
-	"github.com/wamp3hub/wamp3router/daemon/command/run"
+	"github.com/wamp3hub/wamp3router/source/daemon/command/generateTicket"
+	"github.com/wamp3hub/wamp3router/source/daemon/command/run"
 )
 
 var Command = &cobra.Command{

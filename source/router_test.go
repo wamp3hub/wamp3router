@@ -1,7 +1,7 @@
 package router_test
 
 import (
-	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -9,49 +9,43 @@ import (
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
-	router "github.com/wamp3hub/wamp3router"
-	routerStorages "github.com/wamp3hub/wamp3router/storages"
+	router "github.com/wamp3hub/wamp3router/source"
+	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
-func runRouter() wampShared.Producible[*wamp.Peer] {
+func runRouter() *wampShared.ObservableObject[*wamp.Peer] {
 	routerID := wampShared.NewID()
-
 	storagePath := "/tmp/wamp3rd-" + routerID + ".db"
 	storage, _ := routerStorages.NewBoltDBStorage(storagePath)
-
-	consumeNewcomers, produceNewcomer, _ := wampShared.NewStream[*wamp.Peer]()
-
-	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
-	lPeer := wamp.SpawnPeer(routerID, lTransport)
-	rPeer := wamp.SpawnPeer(routerID, rTransport)
-	session := wamp.NewSession(rPeer)
-
-	router.Serve(session, storage, consumeNewcomers)
-
-	produceNewcomer(lPeer)
-
-	return produceNewcomer
+	__router := router.NewRouter(
+		routerID,
+		storage,
+		slog.Default(),
+	)
+	__router.Serve()
+	return __router.Newcomers
 }
 
 func joinSession(
-	produceNewcomer wampShared.Producible[*wamp.Peer],
+	newcomers *wampShared.ObservableObject[*wamp.Peer],
 ) *wamp.Session {
+	logger := slog.Default()
 	alphaID := wampShared.NewID()
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
-	lPeer := wamp.SpawnPeer(alphaID, lTransport)
-	rPeer := wamp.SpawnPeer(alphaID, rTransport)
-	session := wamp.NewSession(rPeer)
-	produceNewcomer(lPeer)
+	lPeer := wamp.SpawnPeer(alphaID, lTransport, logger)
+	rPeer := wamp.SpawnPeer(alphaID, rTransport, logger)
+	session := wamp.NewSession(rPeer, logger)
+	newcomers.Next(lPeer)
 	time.Sleep(time.Second)
 	return session
 }
 
 func TestSubscribePublish(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		wg := new(sync.WaitGroup)
 
@@ -59,17 +53,13 @@ func TestSubscribePublish(t *testing.T) {
 			alphaSession,
 			"net.example",
 			&wamp.SubscribeOptions{},
-			func(publishEvent wamp.PublishEvent) {
-				var message string
-				e := publishEvent.Payload(&message)
-				if e == nil {
-					t.Logf("new message %s", message)
-					wg.Done()
-				}
+			func(message string, publishEvent wamp.PublishEvent) {
+				t.Logf("new message %s", message)
+				wg.Done()
 			},
 		)
 		if e == nil {
-			t.Log("subscribe success")
+			t.Logf("subscribe success ID=%s", subscription.ID)
 		} else {
 			t.Fatalf("subscribe error %s", e)
 		}
@@ -78,7 +68,9 @@ func TestSubscribePublish(t *testing.T) {
 
 		e = wamp.Publish(
 			betaSession,
-			&wamp.PublishFeatures{URI: "net.example"}, "Hello, I'm session beta!")
+			&wamp.PublishFeatures{URI: "net.example"},
+			"Hello, I'm session beta!",
+		)
 		if e == nil {
 			t.Logf("publish success")
 		} else {
@@ -97,24 +89,19 @@ func TestSubscribePublish(t *testing.T) {
 }
 
 func TestRPC(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		registration, e := wamp.Register(
 			alphaSession,
 			"net.example.greeting",
 			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) wamp.ReplyEvent {
-				var name string
-				e := callEvent.Payload(&name)
-				if e == nil {
-					result := "Hello, " + name + "!"
-					return wamp.NewReplyEvent(callEvent, result)
-				}
-				return wamp.NewErrorEvent(callEvent, errors.New("InvalidPayload"))
+			func(name string, callEvent wamp.CallEvent) (string, error) {
+				result := "Hello, " + name + "!"
+				return result, nil
 			},
 		)
 		if e == nil {
@@ -124,7 +111,6 @@ func TestRPC(t *testing.T) {
 		}
 
 		expectedResult := "Hello, beta!"
-	
 		pendingResponse := wamp.Call[string](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.greeting"},
@@ -146,16 +132,16 @@ func TestRPC(t *testing.T) {
 	})
 
 	t.Run("Case: Cancellation", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		alphaSession := joinSession(nextNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
 		_, e := wamp.Register(
 			alphaSession,
 			"net.example.long",
 			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) wamp.ReplyEvent {
+			func(payload any, callEvent wamp.CallEvent) (struct{}, error) {
 				time.Sleep(time.Minute)
-				return wamp.NewReplyEvent(callEvent, true)
+				return struct{}{}, nil
 			},
 		)
 		if e == nil {
@@ -173,9 +159,9 @@ func TestRPC(t *testing.T) {
 	})
 
 	t.Run("Case: Registration Not Found", func(t *testing.T) {
-		session := joinSession(produceNewcomer)
-	
-		pendingResponse := wamp.Call[struct {}](
+		session := joinSession(nextNewcomer)
+
+		pendingResponse := wamp.Call[struct{}](
 			session,
 			&wamp.CallFeatures{URI: "net.example.not_existing"},
 			struct{}{},
@@ -190,55 +176,82 @@ func TestRPC(t *testing.T) {
 }
 
 func TestGenerator(t *testing.T) {
-	produceNewcomer := runRouter()
+	nextNewcomer := runRouter()
+
+	alphaSession := joinSession(nextNewcomer)
+
+	_, e := wamp.Register(
+		alphaSession,
+		"net.example.reverse",
+		&wamp.RegisterOptions{},
+		func(n int, callEvent wamp.CallEvent) (int, error) {
+			source := wamp.Event(callEvent)
+			for i := n; i > -1; i-- {
+				source = wamp.Yield(source, i)
+			}
+			return -1, wamp.GeneratorExit(source)
+		},
+	)
+	if e == nil {
+		t.Log("register success")
+	} else {
+		t.Fatalf("register error %s", e)
+	}
 
 	t.Run("Case: Happy Path", func(t *testing.T) {
-		alphaSession := joinSession(produceNewcomer)
-		betaSession := joinSession(produceNewcomer)
+		betaSession := joinSession(nextNewcomer)
 
-		registration, e := wamp.Register(
-			alphaSession,
-			"net.example.reverse",
-			&wamp.RegisterOptions{},
-			func(callEvent wamp.CallEvent) wamp.ReplyEvent {
-				source := wamp.Event(callEvent)
-				var n int
-				e := callEvent.Payload(&n)
-				if e == nil {
-					for i := n; i > 0; i-- {
-						source, _ = wamp.Yield(source, i)
-					}
-					return wamp.NewReplyEvent(source, 0)
-				}
-				return wamp.NewErrorEvent(callEvent, errors.New("InvalidPayload"))
-			},
-		)
-		if e == nil {
-			t.Log("register success")
-		} else {
-			t.Fatalf("register error %s", e)
-		}
-
-		generator := wamp.NewRemoteGenerator[int](
+		generator, e := wamp.NewRemoteGenerator[int](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.reverse"},
-			100,
+			10,
 		)
+		if e == nil {
+			t.Log("generator success")
+		} else {
+			t.Fatalf("generator error %s", e)
+		}
 		for generator.Active() {
 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
 			if e == nil {
 				t.Logf("result %d", result)
+			} else if e.Error() == "GeneratorExit" {
+				t.Logf("generator done")
+			} else {
+				t.Fatalf("generator error %s", e)
+			}
+		}
+	})
+
+	t.Run("Case: Stop", func(t *testing.T) {
+		betaSession := joinSession(nextNewcomer)
+
+		generator, e := wamp.NewRemoteGenerator[int](
+			betaSession,
+			&wamp.CallFeatures{URI: "net.example.reverse"},
+			100,
+		)
+		if e == nil {
+			t.Log("generator successfully created")
+		} else {
+			t.Fatalf("create generator error %s", e)
+		}
+		for i := 0; i < 10; i++ {
+			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
+			if e == nil {
+				t.Logf("result %d", result)
+			} else if e.Error() == "GeneratorExit" {
+				t.Logf("generator done")
 			} else {
 				t.Fatalf("generator error %s", e)
 			}
 		}
 
-		e = wamp.Unregister(alphaSession, registration.ID)
+		e = generator.Stop()
 		if e == nil {
-			t.Log("unregister success")
+			t.Log("stop generator success")
 		} else {
-			t.Fatalf("unregister error %s", e)
+			t.Fatalf("stop generator error %s", e)
 		}
 	})
 }
-

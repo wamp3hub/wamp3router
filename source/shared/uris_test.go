@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	routerShared "github.com/wamp3hub/wamp3router/shared"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
 func insertResource[T any](root *routerShared.URISegment[T], path routerShared.Path, resourceID string, data T) {
@@ -61,19 +61,19 @@ func TestDump(t *testing.T) {
 		if len(expectedPathList) != len(pathDump) {
 			t.Fatalf("dump returns unexpected values")
 		}
-	
+
 		URISet := routerShared.NewEmptySet[string]()
 		for _, path := range pathDump {
 			uri := strings.Join(path, ".")
 			URISet.Add(uri)
 		}
-	
+
 		for _, path := range expectedPathList {
 			uri := strings.Join(path, ".")
 			if URISet.Contains(uri) {
 				continue
 			}
-	
+
 			t.Fatalf("dump did not return required value")
 		}
 	})
