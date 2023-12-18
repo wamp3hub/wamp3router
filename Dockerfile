@@ -9,8 +9,10 @@ COPY go.mod go.sum ./
 
 RUN go mod download
 
-COPY ./source/ ./
+COPY . .
 
-RUN go build -C daemon -o wamp3rd
+RUN go build -C source/daemon -o wamp3rd
 
-CMD ./daemon/wamp3rd run
+EXPOSE 8800
+
+CMD ./source/daemon/wamp3rd run
