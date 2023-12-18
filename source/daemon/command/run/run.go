@@ -104,7 +104,7 @@ func init() {
 	defaultUnixPath := "/tmp/wamp3rd-" + defaultRouterID + ".socket"
 	defaultStoragePath := "/tmp/wamp3rd-" + defaultRouterID + ".db"
 	routerIDFlag = Command.Flags().String("id", defaultRouterID, "router id")
-	http2addressFlag = Command.Flags().String("http2address", ":8888", "http2 address")
+	http2addressFlag = Command.Flags().String("http2address", ":8800", "http2 address")
 	enableWebsocketFlag = Command.Flags().Bool("websocket", true, "enable websocket")
 	unixPathFlag = Command.Flags().String("unix-path", defaultUnixPath, "unix socket path")
 	storageClassFlag = Command.Flags().String("storage-class", "BoltDB", "storage class")
