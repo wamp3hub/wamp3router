@@ -6,11 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	wampInterview "github.com/wamp3hub/wamp3go/transports/interview"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
+
 	router "github.com/wamp3hub/wamp3router/source"
 )
 
-var readJSONBody = wampInterview.ReadJSONBody
+var readJSONBody = wampShared.ReadJSONBody
 
 func writeJSONBody(
 	w http.ResponseWriter,
@@ -19,7 +20,7 @@ func writeJSONBody(
 ) error {
 	userError, ok := payload.(error)
 	if ok {
-		payload = wampInterview.ErrorPayload{Message: userError.Error()}
+		payload = wampShared.ErrorPayload{Message: userError.Error()}
 	}
 
 	responseBodyBytes, e := json.Marshal(payload)

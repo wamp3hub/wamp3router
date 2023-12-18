@@ -64,7 +64,6 @@ func http2interviewMount(
 			YourID:   claims.Subject,
 			Ticket:   ticket,
 		}
-		logger.Debug("success", "peerID", responsePayload.YourID)
 		return 200, responsePayload
 	}
 

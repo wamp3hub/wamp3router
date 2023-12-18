@@ -2,8 +2,14 @@ package router
 
 import (
 	"errors"
+	"log/slog"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampShared "github.com/wamp3hub/wamp3go/shared"
+)
+
+var (
+	SomethingWentWrong = errors.New("SomethingWentWrong")
 )
 
 func mount[I, O any](
@@ -12,38 +18,117 @@ func mount[I, O any](
 	options *wamp.RegisterOptions,
 	procedure wamp.CallProcedure[I, O],
 ) {
-	registration, _ := router.Dealer.register(uri, router.Session.ID(), options)
+	registration := wamp.Registration{
+		ID:       wampShared.NewID(),
+		URI:      uri,
+		AuthorID: router.ID,
+		Options:  options,
+	}
+	router.Dealer.registrations.Add(&registration)
 	endpoint := wamp.NewCallEventEndpoint[I, O](procedure, router.logger)
 	router.Session.Registrations[registration.ID] = endpoint
 }
 
-func (router *Router) register(
+func (router *Router) intialize() {
+	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.__register)
+	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.__unregister)
+	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
+	mount(router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.__subscribe)
+	mount(router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.__unsubscribe)
+	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.__getSubscriptionList)
+}
+
+func (router *Router) __register(
 	payload wamp.NewResourcePayload[wamp.RegisterOptions],
 	callEvent wamp.CallEvent,
 ) (*wamp.Registration, error) {
-	route := callEvent.Route()
-	if len(payload.URI) > 0 {
-		registration, e := router.Dealer.register(payload.URI, route.CallerID, payload.Options)
-		if e == nil {
-			return registration, nil
-		}
+	if len(payload.URI) == 0 {
+		return nil, wamp.InvalidPayload
 	}
-	return nil, errors.New("InvalidURI")
+
+	route := callEvent.Route()
+
+	logData := slog.Group(
+		"registration",
+		"URI", payload.URI,
+		"AuthorID", route.CallerID,
+	)
+
+	registration := wamp.Registration{
+		ID:       wampShared.NewID(),
+		URI:      payload.URI,
+		AuthorID: route.CallerID,
+		Options:  payload.Options,
+	}
+	payload.Options.Route = append(payload.Options.Route, router.ID)
+	e := router.Dealer.registrations.Add(&registration)
+	if e != nil {
+		router.logger.Error("during add registration into URIM", "error", e, logData)
+		return nil, SomethingWentWrong
+	}
+
+	e = wamp.Publish(
+		router.Session,
+		&wamp.PublishFeatures{
+			URI:     "wamp.registration.new",
+			Exclude: []string{registration.AuthorID},
+		},
+		registration,
+	)
+	if e == nil {
+		router.logger.Info("new registeration", logData)
+	} else {
+		router.logger.Error(
+			"during publish to topic 'wamp.registration.new'", "error", e, logData,
+		)
+	}
+
+	return &registration, nil
 }
 
 func (router *Router) unregister(
+	authorID string,
+	registrationID string,
+) {
+	removedRegistrationList := router.Dealer.registrations.DeleteByAuthor(authorID, registrationID)
+	for _, registration := range removedRegistrationList {
+		logData := slog.Group(
+			"registration",
+			"URI", registration.URI,
+			"AuthorID", registration.AuthorID,
+		)
+
+		e := wamp.Publish(
+			router.Session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.registration.gone",
+				Exclude: []string{registration.AuthorID},
+			},
+			registration.URI,
+		)
+		if e == nil {
+			router.logger.Info("registration gone", logData)
+		} else {
+			router.logger.Error("during publish to topic 'wamp.registration.gone'", logData)
+		}
+	}
+}
+
+func (router *Router) __unregister(
 	registrationID string,
 	callEvent wamp.CallEvent,
 ) (struct{}, error) {
-	route := callEvent.Route()
-	if len(registrationID) > 0 {
-		router.Dealer.unregister(route.CallerID, registrationID)
-		return struct{}{}, nil
+	if len(registrationID) == 0 {
+		return struct{}{}, wamp.InvalidPayload
 	}
-	return struct{}{}, wamp.InvalidPayload
+
+	route := callEvent.Route()
+	router.unregister(route.CallerID, registrationID)
+
+	return struct{}{}, nil
 }
 
-func (router *Router) getRegistrationList(
+func (router *Router) __getRegistrationList(
 	payload any,
 	callEvent wamp.CallEvent,
 ) (*RegistrationList, error) {
@@ -51,39 +136,100 @@ func (router *Router) getRegistrationList(
 	URIList := router.Dealer.registrations.DumpURIList()
 	for _, uri := range URIList {
 		registrationList := router.Dealer.registrations.Match(uri)
-		nextEvent := wamp.Yield(source, registrationList)
-		source = nextEvent
+		source = wamp.Yield(source, registrationList)
 	}
 	return nil, wamp.GeneratorExit(source)
 }
 
-func (router *Router) subscribe(
+func (router *Router) __subscribe(
 	payload wamp.NewResourcePayload[wamp.SubscribeOptions],
 	callEvent wamp.CallEvent,
 ) (*wamp.Subscription, error) {
-	route := callEvent.Route()
-	if len(payload.URI) > 0 {
-		subscription, e := router.Broker.subscribe(payload.URI, route.CallerID, payload.Options)
-		if e == nil {
-			return subscription, nil
-		}
+	if len(payload.URI) == 0 {
+		return nil, errors.New("InvalidURI")
 	}
-	return nil, errors.New("InvalidURI")
+
+	route := callEvent.Route()
+
+	logData := slog.Group(
+		"registration",
+		"URI", payload.URI,
+		"AuthorID", route.CallerID,
+	)
+
+	subscription := wamp.Subscription{
+		ID:       wampShared.NewID(),
+		URI:      payload.URI,
+		AuthorID: route.CallerID,
+		Options:  payload.Options,
+	}
+	subscription.Options.Route = append(subscription.Options.Route, router.ID)
+	e := router.Broker.subscriptions.Add(&subscription)
+	if e != nil {
+		router.logger.Error("during add subscription into URIM", "error", e, logData)
+		return nil, SomethingWentWrong
+	}
+
+	e = wamp.Publish(
+		router.Session,
+		&wamp.PublishFeatures{
+			URI:     "wamp.subscription.new",
+			Exclude: []string{subscription.AuthorID},
+		},
+		subscription,
+	)
+	if e == nil {
+		router.logger.Info("new subscription", logData)
+	} else {
+		router.logger.Error("during publish to 'wamp.subscription.new'", "error", e, logData)
+	}
+
+	return &subscription, nil
 }
 
 func (router *Router) unsubscribe(
+	authorID string,
+	subscriptionID string,
+) {
+	removedSubscriptionList := router.Broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
+	for _, subscription := range removedSubscriptionList {
+		logData := slog.Group(
+			"subscription",
+			"URI", subscription.URI,
+			"AuthorID", subscription.AuthorID,
+		)
+
+		e := wamp.Publish(
+			router.Session,
+			&wamp.PublishFeatures{
+				URI:     "wamp.subscription.gone",
+				Exclude: []string{subscription.AuthorID},
+			},
+			subscription.URI,
+		)
+		if e == nil {
+			router.logger.Info("subscription gone", logData)
+		} else {
+			router.logger.Error("during publish to 'wamp.subscription.gone'", logData)
+		}
+	}
+}
+
+func (router *Router) __unsubscribe(
 	subscriptionID string,
 	callEvent wamp.CallEvent,
 ) (struct{}, error) {
-	route := callEvent.Route()
-	if len(subscriptionID) > 0 {
-		router.Broker.unsubscribe(route.CallerID, subscriptionID)
-		return struct{}{}, nil
+	if len(subscriptionID) == 0 {
+		return struct{}{}, wamp.InvalidPayload
 	}
-	return struct{}{}, wamp.InvalidPayload
+
+	route := callEvent.Route()
+	router.unsubscribe(route.CallerID, subscriptionID)
+
+	return struct{}{}, nil
 }
 
-func (router *Router) getSubscriptionList(
+func (router *Router) __getSubscriptionList(
 	payload any,
 	callEvent wamp.CallEvent,
 ) (*SubscriptionList, error) {
@@ -91,8 +237,7 @@ func (router *Router) getSubscriptionList(
 	URIList := router.Broker.subscriptions.DumpURIList()
 	for _, uri := range URIList {
 		subscriptionList := router.Broker.subscriptions.Match(uri)
-		nextEvent := wamp.Yield(source, subscriptionList)
-		source = nextEvent
+		source = wamp.Yield(source, subscriptionList)
 	}
 	return nil, wamp.GeneratorExit(source)
 }

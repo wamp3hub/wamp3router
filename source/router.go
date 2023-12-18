@@ -35,17 +35,19 @@ func NewRouter(
 	lPeer := wamp.SpawnPeer(ID, lTransport, logger)
 	rPeer := wamp.SpawnPeer(ID, rTransport, logger)
 	session := wamp.NewSession(rPeer, logger)
-	return &Router{
+	router := Router{
 		ID,
 		lPeer,
 		session,
 		routerShared.NewKeyRing(),
 		storage,
-		NewBroker(session, storage, logger),
-		NewDealer(session, storage, logger),
+		NewBroker(ID, storage, logger),
+		NewDealer(ID, storage, logger),
 		wampShared.NewObservable[*wamp.Peer](),
 		logger.With("name", "Router"),
 	}
+	router.intialize()
+	return &router
 }
 
 func (router *Router) Serve() {
@@ -55,6 +57,8 @@ func (router *Router) Serve() {
 		func(peer *wamp.Peer) {
 			router.logger.Info("attach peer", "ID", peer.ID)
 			<-peer.Alive
+			router.unregister(peer.ID, "")
+			router.unsubscribe(peer.ID, "")
 			router.logger.Info("dettach peer", "ID", peer.ID)
 		},
 		func() { router.logger.Info("down...") },
@@ -64,13 +68,6 @@ func (router *Router) Serve() {
 	router.Dealer.Serve(router.Newcomers)
 
 	router.Newcomers.Next(router.mainPeer)
-
-	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.register)
-	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.unregister)
-	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.getRegistrationList)
-	mount(router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.subscribe)
-	mount(router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.unsubscribe)
-	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.getSubscriptionList)
 }
 
 func (router *Router) Shutdown() {

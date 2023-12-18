@@ -14,92 +14,24 @@ import (
 type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
 
 type Dealer struct {
-	session       *wamp.Session
-	registrations *routerShared.URIM[*wamp.RegisterOptions]
-	logger        *slog.Logger
+	routerID      string
 	peers         map[string]*wamp.Peer
 	counter       map[string]int
+	registrations *routerShared.URIM[*wamp.RegisterOptions]
+	logger        *slog.Logger
 }
 
 func NewDealer(
-	session *wamp.Session,
+	routerID string,
 	storage routerShared.Storage,
 	logger *slog.Logger,
 ) *Dealer {
 	return &Dealer{
-		session,
-		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
-		logger.With("name", "Dealer"),
+		routerID,
 		make(map[string]*wamp.Peer),
 		make(map[string]int),
-	}
-}
-
-func (dealer *Dealer) register(
-	uri string,
-	authorID string,
-	options *wamp.RegisterOptions,
-) (*wamp.Registration, error) {
-	logData := slog.Group(
-		"registration",
-		"URI", uri,
-		"AuthorID", authorID,
-	)
-
-	options.Route = append(options.Route, dealer.session.ID())
-	registration := wamp.Registration{
-		ID:       wampShared.NewID(),
-		URI:      uri,
-		AuthorID: authorID,
-		Options:  options,
-	}
-	e := dealer.registrations.Add(&registration)
-	if e != nil {
-		dealer.logger.Error("during add registration into URIM", logData)
-		return nil, e
-	}
-
-	e = wamp.Publish(
-		dealer.session,
-		&wamp.PublishFeatures{
-			URI:     "wamp.registration.new",
-			Exclude: []string{authorID},
-		},
-		registration,
-	)
-	if e == nil {
-		dealer.logger.Info("new registeration", logData)
-	} else {
-		dealer.logger.Error("during publish to topic 'wamp.registration.new'", logData)
-	}
-	return &registration, nil
-}
-
-func (dealer *Dealer) unregister(
-	authorID string,
-	registrationID string,
-) {
-	removedRegistrationList := dealer.registrations.DeleteByAuthor(authorID, registrationID)
-	for _, registration := range removedRegistrationList {
-		logData := slog.Group(
-			"registration",
-			"URI", registration.URI,
-			"AuthorID", registration.AuthorID,
-		)
-
-		e := wamp.Publish(
-			dealer.session,
-			&wamp.PublishFeatures{
-				URI:     "wamp.registration.gone",
-				Exclude: []string{authorID},
-			},
-			registration.URI,
-		)
-		if e == nil {
-			dealer.logger.Info("registration gone", logData)
-		} else {
-			dealer.logger.Error("during publish to topic 'wamp.registration.gone'", logData)
-		}
+		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
+		logger.With("name", "Dealer"),
 	}
 }
 
@@ -134,7 +66,7 @@ func (dealer *Dealer) sendReply(
 	event wamp.ReplyEvent,
 ) {
 	features := event.Features()
-	features.VisitedRouters = append(features.VisitedRouters, dealer.session.ID())
+	features.VisitedRouters = append(features.VisitedRouters, dealer.routerID)
 
 	logData := slog.Group(
 		"response",
@@ -160,7 +92,7 @@ func (dealer *Dealer) onCall(
 
 	route := callEvent.Route()
 	route.CallerID = caller.ID
-	route.VisitedRouters = append(route.VisitedRouters, dealer.session.ID())
+	route.VisitedRouters = append(route.VisitedRouters, dealer.routerID)
 
 	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
 		callEvent.ID(), timeout,
@@ -209,7 +141,7 @@ func (dealer *Dealer) onCall(
 
 			if done {
 				cancelFeatures := cancelEvent.Features()
-				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.session.ID())
+				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.routerID)
 				e := executor.Send(cancelEvent)
 				if e == nil {
 					dealer.logger.Info("call event cancelled", registrationLogData, requestLogData)
@@ -226,7 +158,7 @@ func (dealer *Dealer) onCall(
 			cancelCancelEventPromise()
 
 			if response.Kind() == wamp.MK_YIELD {
-				loopGenerator(dealer.session, caller, executor, callEvent, response, dealer.logger)
+				loopGenerator(dealer.routerID, caller, executor, callEvent, response, dealer.logger)
 			} else {
 				dealer.sendReply(caller, response)
 			}
@@ -245,7 +177,6 @@ func (dealer *Dealer) onCall(
 }
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
-	dealer.unregister(peer.ID, "")
 	delete(dealer.peers, peer.ID)
 	dealer.logger.Info("dettach peer", "ID", peer.ID)
 }

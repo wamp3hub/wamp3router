@@ -12,90 +12,22 @@ import (
 type SubscriptionList = routerShared.ResourceList[*wamp.SubscribeOptions]
 
 type Broker struct {
-	subscriptions *routerShared.URIM[*wamp.SubscribeOptions]
-	session       *wamp.Session
-	logger        *slog.Logger
+	routerID      string
 	peers         map[string]*wamp.Peer
+	subscriptions *routerShared.URIM[*wamp.SubscribeOptions]
+	logger        *slog.Logger
 }
 
 func NewBroker(
-	session *wamp.Session,
+	routerID string,
 	storage routerShared.Storage,
 	logger *slog.Logger,
 ) *Broker {
 	return &Broker{
-		routerShared.NewURIM[*wamp.SubscribeOptions](storage, logger),
-		session,
-		logger.With("name", "Broker"),
+		routerID,
 		make(map[string]*wamp.Peer),
-	}
-}
-
-func (broker *Broker) subscribe(
-	uri string,
-	authorID string,
-	options *wamp.SubscribeOptions,
-) (*wamp.Subscription, error) {
-	logData := slog.Group(
-		"subscription",
-		"URI", uri,
-		"AuthorID", authorID,
-	)
-
-	options.Route = append(options.Route, broker.session.ID())
-	subscription := wamp.Subscription{
-		ID:       wampShared.NewID(),
-		URI:      uri,
-		AuthorID: authorID,
-		Options:  options,
-	}
-	e := broker.subscriptions.Add(&subscription)
-	if e != nil {
-		broker.logger.Error("during add subscription into URIM", "error", e, logData)
-		return nil, e
-	}
-
-	e = wamp.Publish(
-		broker.session,
-		&wamp.PublishFeatures{
-			URI:     "wamp.subscription.new",
-			Exclude: []string{authorID},
-		},
-		subscription,
-	)
-	if e == nil {
-		broker.logger.Info("new subscription", logData)
-	} else {
-		broker.logger.Error("during publish to 'wamp.subscription.new'", "error", e, logData)
-	}
-	return &subscription, nil
-}
-
-func (broker *Broker) unsubscribe(
-	authorID string,
-	subscriptionID string,
-) {
-	removedSubscriptionList := broker.subscriptions.DeleteByAuthor(authorID, subscriptionID)
-	for _, subscription := range removedSubscriptionList {
-		logData := slog.Group(
-			"subscription",
-			"URI", subscription.URI,
-			"AuthorID", subscription.AuthorID,
-		)
-
-		e := wamp.Publish(
-			broker.session,
-			&wamp.PublishFeatures{
-				URI:     "wamp.subscription.gone",
-				Exclude: []string{authorID},
-			},
-			subscription.URI,
-		)
-		if e == nil {
-			broker.logger.Info("subscription gone", logData)
-		} else {
-			broker.logger.Error("during publish to 'wamp.subscription.gone'", logData)
-		}
+		routerShared.NewURIM[*wamp.SubscribeOptions](storage, logger),
+		logger.With("name", "Broker"),
 	}
 }
 
@@ -109,7 +41,7 @@ func (broker *Broker) matchSubscriptions(
 func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) (e error) {
 	route := request.Route()
 	route.PublisherID = publisher.ID
-	route.VisitedRouters = append(route.VisitedRouters, broker.session.ID())
+	route.VisitedRouters = append(route.VisitedRouters, broker.routerID)
 
 	features := request.Features()
 
@@ -163,7 +95,6 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 }
 
 func (broker *Broker) onLeave(peer *wamp.Peer) {
-	broker.unsubscribe(peer.ID, "")
 	delete(broker.peers, peer.ID)
 	broker.logger.Info("dettach peer", "ID", peer.ID)
 }
