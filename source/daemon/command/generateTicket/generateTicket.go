@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	wamp "github.com/wamp3hub/wamp3go"
-	wampSerializers "github.com/wamp3hub/wamp3go/serializers"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 )
@@ -16,7 +15,7 @@ func GenerateTicket(
 	peerID string,
 	duration time.Duration,
 ) {
-	session, e := wampTransports.UnixJoin(unixPath, wampSerializers.DefaultSerializer)
+	session, e := wampTransports.UnixJoin(&wampTransports.UnixJoinOptions{Path: "/tmp/wamp3rd.socket"})
 	if e == nil {
 		type GenerateTicketPayload struct {
 			PeerID   string

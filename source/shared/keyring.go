@@ -6,6 +6,10 @@ import (
 	"errors"
 )
 
+var (
+	ErrorInvalidTicket = errors.New("InvalidTicket")
+)
+
 type KeyRing struct {
 	privateKey *rsa.PrivateKey
 	publicKeys []*rsa.PublicKey
@@ -59,5 +63,5 @@ func (ring *KeyRing) JWTParse(ticket string) (*JWTClaims, error) {
 			return claims, nil
 		}
 	}
-	return nil, errors.New("InvalidTicket")
+	return nil, ErrorInvalidTicket
 }

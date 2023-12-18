@@ -1,24 +1,21 @@
 package run
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
-	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	wampTransports "github.com/wamp3hub/wamp3go/transports"
 
-	router "github.com/wamp3hub/wamp3router"
-	routerServers "github.com/wamp3hub/wamp3router/servers"
-	routerShared "github.com/wamp3hub/wamp3router/shared"
-	routerStorages "github.com/wamp3hub/wamp3router/storages"
+	router "github.com/wamp3hub/wamp3router/source"
+	routerServers "github.com/wamp3hub/wamp3router/source/servers"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
+	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
 func Run(
-	keyRing *routerShared.KeyRing,
 	routerID string,
 	http2address string,
 	enableWebsocket bool,
@@ -27,51 +24,54 @@ func Run(
 	storagePath string,
 	debug bool,
 ) {
-	log.SetFlags(0)
+	routerShared.PrintLogotype()
+
+	loggingLevel := slog.LevelInfo
+	if debug {
+		loggingLevel = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(
+		os.Stdout,
+		&slog.HandlerOptions{AddSource: false, Level: loggingLevel},
+	)
+	logger := slog.New(handler)
 
 	storage, e := routerStorages.NewBoltDBStorage(storagePath)
 	if e != nil {
+		logger.Error("during initialization storage", "error", e)
 		panic("failed to initialize storage")
 	}
 
-	consumeNewcomers, produceNewcomer, closeNewcomers := wampShared.NewStream[*wamp.Peer]()
-
-	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
-	lPeer := wamp.SpawnPeer(routerID, lTransport)
-	rPeer := wamp.SpawnPeer(routerID, rTransport)
-	session := wamp.NewSession(rPeer)
-
-	router.Serve(session, storage, consumeNewcomers)
-
-	produceNewcomer(lPeer)
-
-	http2server := routerServers.HTTP2Server{
-		EnableWebsocket: enableWebsocket,
-		Address:         http2address,
-		Session:         session,
-		KeyRing:         keyRing,
-		ProduceNewcomer: produceNewcomer,
-	}
-	unixServer := routerServers.UnixServer{
-		Path: unixPath,
-		Session: session,
-		KeyRing: keyRing,
-		ProduceNewcomer: produceNewcomer,
-	}
-
+	__router := router.NewRouter(
+		wampShared.NewID(),
+		storage,
+		logger,
+	)
+	http2server := routerServers.NewHTTP2Server(
+		http2address,
+		enableWebsocket,
+		__router,
+		logger,
+	)
+	unixServer := routerServers.NewUnixServer(
+		unixPath,
+		__router,
+		logger,
+	)
 	go http2server.Serve()
 	go unixServer.Serve()
+	go __router.Serve()
 
 	exitSignal := make(chan os.Signal, 1)
 	signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
-
 	<-exitSignal
-	log.Printf("Gracefully shutting down...")
+
+	logger.Info("gracefully shutting down...")
 	http2server.Shutdown()
 	unixServer.Shutdown()
-	closeNewcomers()
+	__router.Shutdown()
 	storage.Destroy()
-	log.Printf("Shutdown complete")
+	logger.Info("shutdown complete")
 }
 
 var (
@@ -86,10 +86,7 @@ var (
 		Use:   "run",
 		Short: "Run new instance of Router",
 		Run: func(cmd *cobra.Command, args []string) {
-			keyRing := routerShared.NewKeyRing()
-
 			Run(
-				keyRing,
 				*routerIDFlag,
 				*http2addressFlag,
 				*enableWebsocketFlag,
