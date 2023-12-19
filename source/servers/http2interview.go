@@ -38,6 +38,10 @@ func http2interviewMount(
 	}
 
 	onInterview := func(request *http.Request) (int, any) {
+		if request.Method == "OPTIONS" {
+			return 200, nil
+		}
+
 		requestPayload := new(wampInterview.Payload)
 		e := readJSONBody(request.Body, requestPayload)
 		if e != nil {
