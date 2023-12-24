@@ -1,42 +1,39 @@
 # WAMP3Router
 
-It implements the open
-[Web Application Messaging Protocol (WAMP)](https://wamp-proto.org/index.html).
+The WAMP3Router is a high-performance router for WAMP3 applications. It provides efficient and robust message routing between different parts of your application.
 
-![WAMP Router](https://mediacomem.github.io/comem-archioweb/2021-2022/subjects/wamp/images/routed-protocol.png)
+The router is built with scalability and robustness in mind. It can handle high volumes of messages without compromising on performance, making it suitable for both small and large-scale applications.
 
-## Web Application Messaging Protocol
+WAMP3Router supports various client libraries including
+[JavaScript](https://github.com/wamp3hub/wamp3js),
+[Python](https://github.com/wamp3hub/wamp3py),
+and [GO](https://github.com/wamp3hub/wamp3go),
+providing you with the flexibility to choose the technology that best fits your needs.
 
-WAMP is an open application level protocol registered at
+Whether you're building a real-time application, a multiplayer online game, or an IoT network, WAMP3Router can help you ensure that your messages get to where they need to go.
+
+Router implements the open Web Application Messaging Protocol (WAMP) registered at
 [IANA](https://www.iana.org/assignments/websocket/websocket.xml)
-that provides two messaging patterns:
+that provides
+[Routed Remote Procedure Call (RPC)](https://wamp3hub.github.io/documentation/usage/rpc) and [Publish & Subscribe (PubSub)](https://wamp3hub.github.io/documentation/usage/publish-subscribe)
+messaging patterns.
 
-* [Routed Remote Procedure Call (RPC)](https://wamp-proto.org/faq.html#what-is-rpc)
-* [Publish & Subscribe (PubSub)](https://wamp-proto.org/faq.html#what-is-pubsub)
+In case of any issues or questions, our active community is ready to help. You can also contribute to the project and help us make it even better. Check out our roadmap for upcoming features and improvements.
 
-## Installation
+## Quick Links
+- Read more on [Homepage](https://wamp3hub.github.io/documentation/)
+- Read the [Installation Instructions](https://wamp3hub.github.io/documentation/router/installation)
+- Read more [About Latest Release](https://github.com/wamp3hub/wamp3router/releases)
+- Go to [Docker Repository](https://hub.docker.com/r/wamp3hub/wamp3router)
+- Client Libraries
+    - [JavaScript](https://github.com/wamp3hub/wamp3js)
+    - [Python](https://github.com/wamp3hub/wamp3py)
+    - [GO](https://github.com/wamp3hub/wamp3go)
 
-```bash
-git clone git@github.com:wamp3hub/wamp3router.git
-cd ./source/daemon/
-go build -o wamp3rd
-./wamp3rd
-```
+### Support
 
-## Docker
+If you encounter any problems or have any questions, please [open an issue on GitHub](https://github.com/wamp3hub/wamp3router/issues/new).
 
-build
-```bash
-docker build -t wamp3rd:latest .
-```
+### Roadmap
 
-run
-```
-docker run -p 8800:8800 --name wamp3rd -d wamp3rd
-```
-
-## Roadmap
-
-- Scalability
-- Security
-- Realm Gateway
+[See the open issues](https://github.com/wamp3hub/wamp3router/issues) for a list of proposed features (and known issues).
