@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rs/cors"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
 	router "github.com/wamp3hub/wamp3router/source"
@@ -79,7 +80,8 @@ func (server *HTTP2Server) Serve() error {
 		)
 	}
 
-	server.super = &http.Server{Addr: server.Address, Handler: serveMux}
+	__cors := cors.Default()
+	server.super = &http.Server{Addr: server.Address, Handler: __cors.Handler(serveMux)}
 
 	server.logger.Info("listening...", "HTTP2Server.Address", server.Address)
 	e := server.super.ListenAndServe()

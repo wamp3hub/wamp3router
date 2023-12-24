@@ -18,8 +18,21 @@ that provides two messaging patterns:
 
 ```bash
 git clone git@github.com:wamp3hub/wamp3router.git
-cd ./demon/
-go run .
+cd ./source/daemon/
+go build -o wamp3rd
+./wamp3rd
+```
+
+## Docker
+
+build
+```bash
+docker build -t wamp3rd:latest .
+```
+
+run
+```
+docker run -p 8800:8800 --name wamp3rd -d wamp3rd
 ```
 
 ## Roadmap
