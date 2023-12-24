@@ -25,10 +25,10 @@ In case of any issues or questions, our active community is ready to help. You c
 - Read the [Installation Instructions](https://wamp3hub.github.io/documentation/router/installation)
 - Read more [About Latest Release](https://github.com/wamp3hub/wamp3router/releases)
 - Go to [Docker Repository](https://hub.docker.com/r/wamp3hub/wamp3router)
-- Client Libraries
-    - [JavaScript](https://github.com/wamp3hub/wamp3js)
-    - [Python](https://github.com/wamp3hub/wamp3py)
-    - [GO](https://github.com/wamp3hub/wamp3go)
+- Official Client Libraries
+    - [wamp3js (JavaScript)](https://github.com/wamp3hub/wamp3js)
+    - [wamp3py (Python)](https://github.com/wamp3hub/wamp3py)
+    - [wamp3go (GO)](https://github.com/wamp3hub/wamp3go)
 
 ### Support
 
