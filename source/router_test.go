@@ -10,6 +10,7 @@ import (
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 	router "github.com/wamp3hub/wamp3router/source"
+	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
@@ -17,9 +18,11 @@ func runRouter() *wampShared.Observable[*wamp.Peer] {
 	routerID := wampShared.NewID()
 	storagePath := "/tmp/wamp3rd-" + routerID + ".db"
 	storage, _ := routerStorages.NewBoltDBStorage(storagePath)
+	keyRing := routerShared.GenerateKeyRing()
 	__router := router.NewRouter(
 		routerID,
 		storage,
+		keyRing,
 		slog.Default(),
 	)
 	__router.Serve()

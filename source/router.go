@@ -29,6 +29,7 @@ type Router struct {
 func NewRouter(
 	ID string,
 	storage routerShared.Storage,
+	keyRing *routerShared.KeyRing,
 	logger *slog.Logger,
 ) *Router {
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
@@ -39,19 +40,13 @@ func NewRouter(
 		ID,
 		lPeer,
 		session,
-		routerShared.NewKeyRing(),
+		keyRing,
 		storage,
 		NewBroker(ID, storage, logger),
 		NewDealer(ID, storage, logger),
 		wampShared.NewObservable[*wamp.Peer](),
 		logger.With("name", "Router"),
 	}
-	router.intialize()
-	return &router
-}
-
-func (router *Router) Serve() {
-	router.logger.Info("up...")
 
 	router.Newcomers.Observe(
 		func(peer *wamp.Peer) {
@@ -65,12 +60,19 @@ func (router *Router) Serve() {
 				},
 			)
 		},
-		func() { router.logger.Info("down...") },
+		func() {
+			router.logger.Info("down...")
+		},
 	)
 
+	router.intialize()
+	return &router
+}
+
+func (router *Router) Serve() {
+	router.logger.Info("up...")
 	router.Broker.Serve(router.Newcomers)
 	router.Dealer.Serve(router.Newcomers)
-
 	router.Newcomers.Next(router.metaPeer)
 }
 

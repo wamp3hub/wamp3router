@@ -178,11 +178,11 @@ func (dealer *Dealer) onCall(
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 	delete(dealer.peers, peer.ID)
-	dealer.logger.Info("dettach peer", "ID", peer.ID)
+	dealer.logger.Debug("dettach peer", "ID", peer.ID)
 }
 
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
-	dealer.logger.Info("attach peer", "ID", peer.ID)
+	dealer.logger.Debug("attach peer", "ID", peer.ID)
 	dealer.peers[peer.ID] = peer
 	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
@@ -191,9 +191,9 @@ func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 }
 
 func (dealer *Dealer) Serve(newcomers *wampShared.Observable[*wamp.Peer]) {
-	dealer.logger.Info("up...")
+	dealer.logger.Debug("up...")
 	newcomers.Observe(
 		dealer.onJoin,
-		func() { dealer.logger.Info("down...") },
+		func() { dealer.logger.Debug("down...") },
 	)
 }

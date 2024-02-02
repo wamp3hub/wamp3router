@@ -7,26 +7,33 @@ import (
 )
 
 var (
-	ErrorInvalidTicket = errors.New("InvalidTicket")
+	ErrorInvalidTicket = errors.New("invalid ticket")
 )
 
 type KeyRing struct {
-	privateKey *rsa.PrivateKey
-	publicKeys []*rsa.PublicKey
+	PrivateKey *rsa.PrivateKey
+	PublicKeys []*rsa.PublicKey
 }
 
 // creates new instance of `KeyRing`
-func NewKeyRing() *KeyRing {
+func NewKeyRing(
+	privateKey *rsa.PrivateKey,
+) *KeyRing {
+	return &KeyRing{privateKey, []*rsa.PublicKey{&privateKey.PublicKey}}
+}
+
+// creates new instance of `KeyRing`
+func GenerateKeyRing() *KeyRing {
 	privateKey, e := rsa.GenerateKey(rand.Reader, 4096)
-	if e == nil {
-		return &KeyRing{privateKey, []*rsa.PublicKey{&privateKey.PublicKey}}
+	if e != nil {
+		panic("generate rsa private key error")
 	}
-	panic("generate rsa private key error")
+	return NewKeyRing(privateKey)
 }
 
 // returns own public key
 func (ring *KeyRing) Public() ([]byte, error) {
-	v, e := RSAPublicKeyEncode(ring.publicKeys[0])
+	v, e := RSAPublicKeyEncode(ring.PublicKeys[0])
 	return v, e
 }
 
@@ -35,14 +42,14 @@ func (ring *KeyRing) Add(v []byte) error {
 	// TODO check for duplicates
 	key, e := RSAPublicKeyDecode(v)
 	if e == nil {
-		ring.publicKeys = append(ring.publicKeys, key)
+		ring.PublicKeys = append(ring.PublicKeys, key)
 	}
 	return e
 }
 
 // returns list of collected public keys
 func (ring *KeyRing) Dump() (result [][]byte) {
-	for _, key := range ring.publicKeys {
+	for _, key := range ring.PublicKeys {
 		v, e := RSAPublicKeyEncode(key)
 		if e == nil {
 			result = append(result, v)
@@ -53,11 +60,11 @@ func (ring *KeyRing) Dump() (result [][]byte) {
 
 // signs ticket with own private key
 func (ring *KeyRing) JWTSign(claims *JWTClaims) (string, error) {
-	return JWTSign(ring.privateKey, claims)
+	return JWTSign(ring.PrivateKey, claims)
 }
 
 func (ring *KeyRing) JWTParse(ticket string) (*JWTClaims, error) {
-	for _, key := range ring.publicKeys {
+	for _, key := range ring.PublicKeys {
 		claims, e := JWTParse(key, ticket)
 		if e == nil {
 			return claims, nil

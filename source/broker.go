@@ -96,11 +96,11 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 
 func (broker *Broker) onLeave(peer *wamp.Peer) {
 	delete(broker.peers, peer.ID)
-	broker.logger.Info("dettach peer", "ID", peer.ID)
+	broker.logger.Debug("dettach peer", "ID", peer.ID)
 }
 
 func (broker *Broker) onJoin(peer *wamp.Peer) {
-	broker.logger.Info("attach peer", "ID", peer.ID)
+	broker.logger.Debug("attach peer", "ID", peer.ID)
 	broker.peers[peer.ID] = peer
 	peer.IncomingPublishEvents.Observe(
 		func(event wamp.PublishEvent) { broker.onPublish(peer, event) },
@@ -109,9 +109,9 @@ func (broker *Broker) onJoin(peer *wamp.Peer) {
 }
 
 func (broker *Broker) Serve(newcomers *wampShared.Observable[*wamp.Peer]) {
-	broker.logger.Info("up...")
+	broker.logger.Debug("up...")
 	newcomers.Observe(
 		broker.onJoin,
-		func() { broker.logger.Info("down...") },
+		func() { broker.logger.Debug("down...") },
 	)
 }
