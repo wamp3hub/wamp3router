@@ -16,13 +16,13 @@ type Server interface {
 
 type Router struct {
 	ID        string
-	mainPeer  *wamp.Peer
+	metaPeer  *wamp.Peer
 	Session   *wamp.Session
 	KeyRing   *routerShared.KeyRing
 	Storage   routerShared.Storage
 	Broker    *Broker
 	Dealer    *Dealer
-	Newcomers *wampShared.ObservableObject[*wamp.Peer]
+	Newcomers *wampShared.Observable[*wamp.Peer]
 	logger    *slog.Logger
 }
 
@@ -56,10 +56,14 @@ func (router *Router) Serve() {
 	router.Newcomers.Observe(
 		func(peer *wamp.Peer) {
 			router.logger.Info("attach peer", "ID", peer.ID)
-			<-peer.Alive
-			router.unregister(peer.ID, "")
-			router.unsubscribe(peer.ID, "")
-			router.logger.Info("dettach peer", "ID", peer.ID)
+			peer.RejoinEvents.Observe(
+				func(__ struct{}) {},
+				func() {
+					router.unregister(peer.ID, "")
+					router.unsubscribe(peer.ID, "")
+					router.logger.Info("dettach peer", "ID", peer.ID)
+				},
+			)
 		},
 		func() { router.logger.Info("down...") },
 	)
@@ -67,7 +71,7 @@ func (router *Router) Serve() {
 	router.Broker.Serve(router.Newcomers)
 	router.Dealer.Serve(router.Newcomers)
 
-	router.Newcomers.Next(router.mainPeer)
+	router.Newcomers.Next(router.metaPeer)
 }
 
 func (router *Router) Shutdown() {

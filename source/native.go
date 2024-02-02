@@ -16,7 +16,7 @@ func mount[I, O any](
 	router *Router,
 	uri string,
 	options *wamp.RegisterOptions,
-	procedure wamp.CallProcedure[I, O],
+	procedure wamp.ProcedureToCall[I, O],
 ) {
 	registration := wamp.Registration{
 		ID:       wampShared.NewID(),
@@ -43,7 +43,7 @@ func (router *Router) __register(
 	callEvent wamp.CallEvent,
 ) (*wamp.Registration, error) {
 	if len(payload.URI) == 0 {
-		return nil, wamp.InvalidPayload
+		return nil, wamp.ErrorInvalidPayload
 	}
 
 	route := callEvent.Route()
@@ -119,7 +119,7 @@ func (router *Router) __unregister(
 	callEvent wamp.CallEvent,
 ) (struct{}, error) {
 	if len(registrationID) == 0 {
-		return struct{}{}, wamp.InvalidPayload
+		return struct{}{}, wamp.ErrorInvalidPayload
 	}
 
 	route := callEvent.Route()
@@ -220,7 +220,7 @@ func (router *Router) __unsubscribe(
 	callEvent wamp.CallEvent,
 ) (struct{}, error) {
 	if len(subscriptionID) == 0 {
-		return struct{}{}, wamp.InvalidPayload
+		return struct{}{}, wamp.ErrorInvalidPayload
 	}
 
 	route := callEvent.Route()

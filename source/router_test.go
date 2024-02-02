@@ -13,7 +13,7 @@ import (
 	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
-func runRouter() *wampShared.ObservableObject[*wamp.Peer] {
+func runRouter() *wampShared.Observable[*wamp.Peer] {
 	routerID := wampShared.NewID()
 	storagePath := "/tmp/wamp3rd-" + routerID + ".db"
 	storage, _ := routerStorages.NewBoltDBStorage(storagePath)
@@ -27,7 +27,7 @@ func runRouter() *wampShared.ObservableObject[*wamp.Peer] {
 }
 
 func joinSession(
-	newcomers *wampShared.ObservableObject[*wamp.Peer],
+	newcomers *wampShared.Observable[*wamp.Peer],
 ) *wamp.Session {
 	logger := slog.Default()
 	alphaID := wampShared.NewID()
@@ -201,7 +201,7 @@ func TestGenerator(t *testing.T) {
 	t.Run("Case: Happy Path", func(t *testing.T) {
 		betaSession := joinSession(nextNewcomer)
 
-		generator, e := wamp.NewRemoteGenerator[int](
+		generator, e := wamp.CallGenerator[int](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.reverse"},
 			10,
@@ -226,7 +226,7 @@ func TestGenerator(t *testing.T) {
 	t.Run("Case: Stop", func(t *testing.T) {
 		betaSession := joinSession(nextNewcomer)
 
-		generator, e := wamp.NewRemoteGenerator[int](
+		generator, e := wamp.CallGenerator[int](
 			betaSession,
 			&wamp.CallFeatures{URI: "net.example.reverse"},
 			100,

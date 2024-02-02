@@ -75,11 +75,11 @@ func (dealer *Dealer) sendReply(
 		"VisitedRouters", features.VisitedRouters,
 	)
 
-	e := caller.Send(event)
-	if e == nil {
+	ok := caller.Send(event, wamp.DEFAULT_RESEND_COUNT)
+	if ok {
 		dealer.logger.Debug("invocation processed successfully", logData)
 	} else {
-		dealer.logger.Error("during send reply event", "error", e, logData)
+		dealer.logger.Error("reply event dispatch error", logData)
 	}
 }
 
@@ -128,9 +128,9 @@ func (dealer *Dealer) onCall(
 		route.ExecutorID = executor.ID
 
 		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
-		e := executor.Send(callEvent)
-		if e != nil {
-			dealer.logger.Error("during send call event", "error", e, registrationLogData, requestLogData)
+		ok := executor.Send(callEvent, wamp.DEFAULT_RESEND_COUNT)
+		if !ok {
+			dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
 			continue
 		}
 		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
@@ -142,11 +142,11 @@ func (dealer *Dealer) onCall(
 			if done {
 				cancelFeatures := cancelEvent.Features()
 				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.routerID)
-				e := executor.Send(cancelEvent)
-				if e == nil {
+				ok := executor.Send(cancelEvent, wamp.DEFAULT_RESEND_COUNT)
+				if ok {
 					dealer.logger.Info("call event cancelled", registrationLogData, requestLogData)
 				} else {
-					dealer.logger.Error("during send cancel event", registrationLogData, requestLogData)
+					dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
 				}
 			} else {
 				dealer.logger.Debug("call event timeout", registrationLogData, requestLogData)
@@ -170,7 +170,7 @@ func (dealer *Dealer) onCall(
 	cancelCancelEventPromise()
 
 	dealer.logger.Debug("procedure not found", requestLogData)
-	response := wamp.NewErrorEvent(callEvent, wamp.ProcedureNotFound)
+	response := wamp.NewErrorEvent(callEvent, wamp.ErrorProcedureNotFound)
 	dealer.sendReply(caller, response)
 
 	return nil
@@ -190,7 +190,7 @@ func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	)
 }
 
-func (dealer *Dealer) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
+func (dealer *Dealer) Serve(newcomers *wampShared.Observable[*wamp.Peer]) {
 	dealer.logger.Info("up...")
 	newcomers.Observe(
 		dealer.onJoin,

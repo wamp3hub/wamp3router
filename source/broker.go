@@ -83,11 +83,11 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 		route.EndpointID = subscription.ID
 		route.SubscriberID = subscriber.ID
 
-		e := subscriber.Send(request)
-		if e == nil {
+		ok := subscriber.Send(request, wamp.DEFAULT_RESEND_COUNT)
+		if ok {
 			broker.logger.Debug("publication sent", subscriptionLogData, requestLogData)
 		} else {
-			broker.logger.Error("during publication send", "error", e, subscriptionLogData, requestLogData)
+			broker.logger.Error("publication dispatch error", subscriptionLogData, requestLogData)
 		}
 	}
 
@@ -108,7 +108,7 @@ func (broker *Broker) onJoin(peer *wamp.Peer) {
 	)
 }
 
-func (broker *Broker) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
+func (broker *Broker) Serve(newcomers *wampShared.Observable[*wamp.Peer]) {
 	broker.logger.Info("up...")
 	newcomers.Observe(
 		broker.onJoin,
