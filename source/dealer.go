@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	cmap "github.com/orcaman/concurrent-map/v2"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
@@ -16,7 +17,7 @@ type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
 type Dealer struct {
 	routerID      string
 	peers         map[string]*wamp.Peer
-	counter       map[string]int
+	counter       cmap.ConcurrentMap[string, int]
 	registrations *routerShared.URIM[*wamp.RegisterOptions]
 	logger        *slog.Logger
 }
@@ -29,7 +30,7 @@ func NewDealer(
 	return &Dealer{
 		routerID,
 		make(map[string]*wamp.Peer),
-		make(map[string]int),
+		cmap.New[int](),
 		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
 		logger.With("name", "Dealer"),
 	}
@@ -53,9 +54,10 @@ func (dealer *Dealer) matchRegistrations(
 			},
 		)
 
-		offset := dealer.counter[uri] % n
+		count, _ := dealer.counter.Get(uri)
+		offset := count % n
 		registrationList = shift(registrationList, offset)
-		dealer.counter[uri] += 1
+		dealer.counter.Set(uri, count + 1)
 	}
 
 	return registrationList

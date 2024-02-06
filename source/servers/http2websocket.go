@@ -40,11 +40,12 @@ func http2websocketMount(
 			if e == nil {
 				// serializerCode := query.Get("serializer")
 				transport := wampTransports.WSTransport{
-					Address: r.RemoteAddr,
+					Address:    r.RemoteAddr,
 					Serializer: wampSerializers.DefaultSerializer,
 					Connection: connection,
 				}
-				peer := wamp.SpawnPeer(claims.Subject, &transport, logger)
+				resumableTransport := wampTransports.MakeResumable(&transport)
+				peer := wamp.SpawnPeer(claims.Subject, resumableTransport, logger)
 				newcomers.Next(peer)
 				logger.Info("new peer", "ID", peer.ID)
 			} else {
