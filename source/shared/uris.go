@@ -83,13 +83,12 @@ func (segment *URISegment[T]) GetSert(path Path) *URISegment[T] {
 
 func (segment *URISegment[T]) PathDump() []Path {
 	result := []Path{}
-	if segment.Leaf() {
-		if segment.Empty() {
-			return result
-		}
-		return append(result, Path{})
+	if !segment.Empty() {
+		result = append(result, Path{})
 	}
-
+	if segment.Leaf() {
+		return result
+	}
 	for key, child := range segment.Children {
 		childResult := child.PathDump()
 		for _, childPath := range childResult {

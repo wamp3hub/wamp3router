@@ -10,7 +10,7 @@ import (
 )
 
 func TestKeyRing(t *testing.T) {
-	keyRing := routerShared.NewKeyRing()
+	keyRing := routerShared.GenerateKeyRing()
 
 	myPublicKey, e := keyRing.Public()
 	if e != nil {

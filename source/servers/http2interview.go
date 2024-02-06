@@ -19,23 +19,7 @@ func http2interviewMount(
 	__logger *slog.Logger,
 ) http.Handler {
 	logger := __logger.With("server", "http2interview")
-
-	authenticate := func(session *wamp.Session, credentials any) error {
-		pendingResponse := wamp.Call[string](
-			session,
-			&wamp.CallFeatures{URI: "wamp.authenticate"},
-			credentials,
-		)
-		_, role, e := pendingResponse.Await()
-		if e == nil {
-			logger.Info("authentication success", "Role", role)
-			return nil
-		} else if e.Error() == "ProcedureNotFound" {
-			logger.Warn("please, register `wamp.authenticate`")
-			return nil
-		}
-		return e
-	}
+	authenticator := NewDynamicAuthenticator(session, __logger)
 
 	onInterview := func(request *http.Request) (int, any) {
 		if request.Method == "OPTIONS" {
@@ -49,7 +33,7 @@ func http2interviewMount(
 			return 400, e
 		}
 
-		e = authenticate(session, requestPayload.Credentials)
+		e = authenticator.authenticate(session, requestPayload.Credentials)
 		if e != nil {
 			logger.Error("during authentication", "error", e)
 			return 400, e

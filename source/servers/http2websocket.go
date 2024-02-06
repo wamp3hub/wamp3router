@@ -16,7 +16,7 @@ import (
 
 func http2websocketMount(
 	keyRing *routerShared.KeyRing,
-	newcomers *wampShared.ObservableObject[*wamp.Peer],
+	newcomers *wampShared.Observable[*wamp.Peer],
 	__logger *slog.Logger,
 ) http.Handler {
 	logger := __logger.With("name", "http2websocket")
@@ -39,14 +39,20 @@ func http2websocketMount(
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
 				// serializerCode := query.Get("serializer")
-				__transport := wampTransports.WSTransport(wampSerializers.DefaultSerializer, connection)
-				peer := wamp.SpawnPeer(claims.Subject, __transport, logger)
+				transport := wampTransports.WSTransport{
+					Address:    r.RemoteAddr,
+					Serializer: wampSerializers.DefaultSerializer,
+					Connection: connection,
+				}
+				resumableTransport := wampTransports.MakeResumable(&transport)
+				peer := wamp.SpawnPeer(claims.Subject, resumableTransport, logger)
 				newcomers.Next(peer)
 				logger.Info("new peer", "ID", peer.ID)
 			} else {
-				logger.Error("failed to upgrade", "error", e)
+				logger.Error("during upgrade", "error", e)
 			}
 		} else {
+			logger.Error("during JWT parse", "error", e)
 			writeJSONBody(w, 400, e)
 		}
 	}

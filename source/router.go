@@ -16,19 +16,20 @@ type Server interface {
 
 type Router struct {
 	ID        string
-	mainPeer  *wamp.Peer
+	metaPeer  *wamp.Peer
 	Session   *wamp.Session
 	KeyRing   *routerShared.KeyRing
 	Storage   routerShared.Storage
 	Broker    *Broker
 	Dealer    *Dealer
-	Newcomers *wampShared.ObservableObject[*wamp.Peer]
+	Newcomers *wampShared.Observable[*wamp.Peer]
 	logger    *slog.Logger
 }
 
 func NewRouter(
 	ID string,
 	storage routerShared.Storage,
+	keyRing *routerShared.KeyRing,
 	logger *slog.Logger,
 ) *Router {
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
@@ -39,35 +40,40 @@ func NewRouter(
 		ID,
 		lPeer,
 		session,
-		routerShared.NewKeyRing(),
+		keyRing,
 		storage,
 		NewBroker(ID, storage, logger),
 		NewDealer(ID, storage, logger),
 		wampShared.NewObservable[*wamp.Peer](),
 		logger.With("name", "Router"),
 	}
+
+	router.Newcomers.Observe(
+		func(peer *wamp.Peer) {
+			router.logger.Info("attach peer", "ID", peer.ID)
+			peer.RejoinEvents.Observe(
+				func(__ struct{}) {},
+				func() {
+					router.unregister(peer.ID, "")
+					router.unsubscribe(peer.ID, "")
+					router.logger.Info("dettach peer", "ID", peer.ID)
+				},
+			)
+		},
+		func() {
+			router.logger.Info("down...")
+		},
+	)
+
 	router.intialize()
 	return &router
 }
 
 func (router *Router) Serve() {
 	router.logger.Info("up...")
-
-	router.Newcomers.Observe(
-		func(peer *wamp.Peer) {
-			router.logger.Info("attach peer", "ID", peer.ID)
-			<-peer.Alive
-			router.unregister(peer.ID, "")
-			router.unsubscribe(peer.ID, "")
-			router.logger.Info("dettach peer", "ID", peer.ID)
-		},
-		func() { router.logger.Info("down...") },
-	)
-
 	router.Broker.Serve(router.Newcomers)
 	router.Dealer.Serve(router.Newcomers)
-
-	router.Newcomers.Next(router.mainPeer)
+	router.Newcomers.Next(router.metaPeer)
 }
 
 func (router *Router) Shutdown() {

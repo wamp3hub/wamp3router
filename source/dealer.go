@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	cmap "github.com/orcaman/concurrent-map/v2"
 	wamp "github.com/wamp3hub/wamp3go"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
@@ -16,7 +17,7 @@ type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
 type Dealer struct {
 	routerID      string
 	peers         map[string]*wamp.Peer
-	counter       map[string]int
+	counter       cmap.ConcurrentMap[string, int]
 	registrations *routerShared.URIM[*wamp.RegisterOptions]
 	logger        *slog.Logger
 }
@@ -29,7 +30,7 @@ func NewDealer(
 	return &Dealer{
 		routerID,
 		make(map[string]*wamp.Peer),
-		make(map[string]int),
+		cmap.New[int](),
 		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
 		logger.With("name", "Dealer"),
 	}
@@ -53,9 +54,10 @@ func (dealer *Dealer) matchRegistrations(
 			},
 		)
 
-		offset := dealer.counter[uri] % n
+		count, _ := dealer.counter.Get(uri)
+		offset := count % n
 		registrationList = shift(registrationList, offset)
-		dealer.counter[uri] += 1
+		dealer.counter.Set(uri, count + 1)
 	}
 
 	return registrationList
@@ -75,11 +77,11 @@ func (dealer *Dealer) sendReply(
 		"VisitedRouters", features.VisitedRouters,
 	)
 
-	e := caller.Send(event)
-	if e == nil {
+	ok := caller.Send(event, wamp.DEFAULT_RESEND_COUNT)
+	if ok {
 		dealer.logger.Debug("invocation processed successfully", logData)
 	} else {
-		dealer.logger.Error("during send reply event", "error", e, logData)
+		dealer.logger.Error("reply event dispatch error", logData)
 	}
 }
 
@@ -128,9 +130,9 @@ func (dealer *Dealer) onCall(
 		route.ExecutorID = executor.ID
 
 		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
-		e := executor.Send(callEvent)
-		if e != nil {
-			dealer.logger.Error("during send call event", "error", e, registrationLogData, requestLogData)
+		ok := executor.Send(callEvent, wamp.DEFAULT_RESEND_COUNT)
+		if !ok {
+			dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
 			continue
 		}
 		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
@@ -142,11 +144,11 @@ func (dealer *Dealer) onCall(
 			if done {
 				cancelFeatures := cancelEvent.Features()
 				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.routerID)
-				e := executor.Send(cancelEvent)
-				if e == nil {
+				ok := executor.Send(cancelEvent, wamp.DEFAULT_RESEND_COUNT)
+				if ok {
 					dealer.logger.Info("call event cancelled", registrationLogData, requestLogData)
 				} else {
-					dealer.logger.Error("during send cancel event", registrationLogData, requestLogData)
+					dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
 				}
 			} else {
 				dealer.logger.Debug("call event timeout", registrationLogData, requestLogData)
@@ -170,7 +172,7 @@ func (dealer *Dealer) onCall(
 	cancelCancelEventPromise()
 
 	dealer.logger.Debug("procedure not found", requestLogData)
-	response := wamp.NewErrorEvent(callEvent, wamp.ProcedureNotFound)
+	response := wamp.NewErrorEvent(callEvent, wamp.ErrorProcedureNotFound)
 	dealer.sendReply(caller, response)
 
 	return nil
@@ -178,11 +180,11 @@ func (dealer *Dealer) onCall(
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
 	delete(dealer.peers, peer.ID)
-	dealer.logger.Info("dettach peer", "ID", peer.ID)
+	dealer.logger.Debug("dettach peer", "ID", peer.ID)
 }
 
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
-	dealer.logger.Info("attach peer", "ID", peer.ID)
+	dealer.logger.Debug("attach peer", "ID", peer.ID)
 	dealer.peers[peer.ID] = peer
 	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
@@ -190,10 +192,10 @@ func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	)
 }
 
-func (dealer *Dealer) Serve(newcomers *wampShared.ObservableObject[*wamp.Peer]) {
-	dealer.logger.Info("up...")
+func (dealer *Dealer) Serve(newcomers *wampShared.Observable[*wamp.Peer]) {
+	dealer.logger.Debug("up...")
 	newcomers.Observe(
 		dealer.onJoin,
-		func() { dealer.logger.Info("down...") },
+		func() { dealer.logger.Debug("down...") },
 	)
 }

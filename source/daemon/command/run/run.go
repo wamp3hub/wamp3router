@@ -15,6 +15,24 @@ import (
 	routerStorages "github.com/wamp3hub/wamp3router/source/storages"
 )
 
+func ReadKeyPair(
+	// publicKeyPath string,
+	privateKeyPath string,
+	__logger *slog.Logger,
+) *routerShared.KeyRing {
+	logger := __logger.With("name", "ReadKeyPair")
+	logger.Debug("Reading rsa private key")
+	privateKey, e := routerShared.ReadRSAPrivateKey(privateKeyPath)
+	if e == nil {
+		return routerShared.NewKeyRing(privateKey)
+	}
+
+	logger.Warn("Unable to parse RSA private key, generating a temporary one", "error", e)
+	keyRing := routerShared.GenerateKeyRing()
+	routerShared.WriteRSAPrivateKey(privateKeyPath, keyRing.PrivateKey)
+	return keyRing
+}
+
 func Run(
 	routerID string,
 	http2address string,
@@ -22,6 +40,7 @@ func Run(
 	unixPath string,
 	storageClass string,
 	storagePath string,
+	privateKeyPath string,
 	debug bool,
 ) {
 	routerShared.PrintLogotype()
@@ -38,13 +57,16 @@ func Run(
 
 	storage, e := routerStorages.NewBoltDBStorage(storagePath)
 	if e != nil {
-		logger.Error("during initialization storage", "error", e)
+		logger.Error("during initialization of storage", "error", e)
 		panic("failed to initialize storage")
 	}
+
+	keyRing := ReadKeyPair(privateKeyPath, logger)
 
 	__router := router.NewRouter(
 		wampShared.NewID(),
 		storage,
+		keyRing,
 		logger,
 	)
 	http2server := routerServers.NewHTTP2Server(
@@ -81,6 +103,7 @@ var (
 	unixPathFlag        *string
 	storageClassFlag    *string
 	storagePathFlag     *string
+	privateKeyPathFlag  *string
 	debugFlag           *bool
 	Command             = &cobra.Command{
 		Use:   "run",
@@ -93,6 +116,7 @@ var (
 				*unixPathFlag,
 				*storageClassFlag,
 				*storagePathFlag,
+				*privateKeyPathFlag,
 				*debugFlag,
 			)
 		},
@@ -103,11 +127,13 @@ func init() {
 	defaultRouterID := wampShared.NewID()
 	defaultUnixPath := "/tmp/wamp3rd-" + defaultRouterID + ".socket"
 	defaultStoragePath := "/tmp/wamp3rd-" + defaultRouterID + ".db"
+	defaultPrivateKeyPath := "/tmp/wamp3rd.pem"
 	routerIDFlag = Command.Flags().String("id", defaultRouterID, "router id")
 	http2addressFlag = Command.Flags().String("http2address", ":8800", "http2 address")
 	enableWebsocketFlag = Command.Flags().Bool("websocket", true, "enable websocket")
 	unixPathFlag = Command.Flags().String("unix-path", defaultUnixPath, "unix socket path")
 	storageClassFlag = Command.Flags().String("storage-class", "BoltDB", "storage class")
 	storagePathFlag = Command.Flags().String("storage-path", defaultStoragePath, "storage path")
+	privateKeyPathFlag = Command.Flags().String("private-key-path", defaultPrivateKeyPath, "rsa private key path in pem format")
 	debugFlag = Command.Flags().Bool("debug", false, "enable debug")
 }

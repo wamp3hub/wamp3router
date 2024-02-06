@@ -5,10 +5,11 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"os"
 )
 
 var (
-	ErrorInvalidRSA = errors.New("key type is not RSA")
+	ErrorInvalidRSA = errors.New("invalid RSA key")
 )
 
 func RSAPublicKeyEncode(v *rsa.PublicKey) ([]byte, error) {
@@ -23,7 +24,7 @@ func RSAPublicKeyEncode(v *rsa.PublicKey) ([]byte, error) {
 func RSAPublicKeyDecode(v []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(v)
 	if block == nil {
-		return nil, errors.New("parse error (PEM block containing the key)")
+		return nil, ErrorInvalidRSA
 	}
 
 	publicKey, e := x509.ParsePKIXPublicKey(block.Bytes)
@@ -35,4 +36,64 @@ func RSAPublicKeyDecode(v []byte) (*rsa.PublicKey, error) {
 		e = ErrorInvalidRSA
 	}
 	return nil, e
+}
+
+func ReadRSAPublicKey(path string) (key *rsa.PublicKey, e error) {
+	bytes, e := os.ReadFile(path)
+	if e == nil {
+		key, e = RSAPublicKeyDecode(bytes)
+	}
+	return key, e
+}
+
+func WriteRSAPublicKey(path string, key *rsa.PublicKey) error {
+	file, e := os.Create(path)
+	if e == nil {
+		bytes, _ := RSAPublicKeyEncode(key)
+		_, e = file.Write(bytes)
+	}
+	return e
+}
+
+func RSAPrivateKeyEncode(v *rsa.PrivateKey) ([]byte, error) {
+	vbytes, e := x509.MarshalPKCS8PrivateKey(v)
+	if e == nil {
+		vpem := pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: vbytes})
+		return vpem, nil
+	}
+	return vbytes, e
+}
+
+func RSAPrivateKeyDecode(v []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(v)
+	if block == nil {
+		return nil, ErrorInvalidRSA
+	}
+
+	privateKey, e := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if e == nil {
+		privateKey, ok := privateKey.(*rsa.PrivateKey)
+		if ok {
+			return privateKey, nil
+		}
+		e = ErrorInvalidRSA
+	}
+	return nil, e
+}
+
+func ReadRSAPrivateKey(path string) (key *rsa.PrivateKey, e error) {
+	bytes, e := os.ReadFile(path)
+	if e == nil {
+		key, e = RSAPrivateKeyDecode(bytes)
+	}
+	return key, e
+}
+
+func WriteRSAPrivateKey(path string, key *rsa.PrivateKey) error {
+	file, e := os.Create(path)
+	if e == nil {
+		bytes, _ := RSAPrivateKeyEncode(key)
+		_, e = file.Write(bytes)
+	}
+	return e
 }
