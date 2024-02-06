@@ -49,9 +49,10 @@ func http2websocketMount(
 				newcomers.Next(peer)
 				logger.Info("new peer", "ID", peer.ID)
 			} else {
-				logger.Error("failed to upgrade", "error", e)
+				logger.Error("during upgrade", "error", e)
 			}
 		} else {
+			logger.Error("during JWT parse", "error", e)
 			writeJSONBody(w, 400, e)
 		}
 	}

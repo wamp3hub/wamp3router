@@ -57,7 +57,7 @@ func Run(
 
 	storage, e := routerStorages.NewBoltDBStorage(storagePath)
 	if e != nil {
-		logger.Error("during initialization storage", "error", e)
+		logger.Error("during initialization of storage", "error", e)
 		panic("failed to initialize storage")
 	}
 
