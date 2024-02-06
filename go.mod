@@ -9,7 +9,7 @@ require (
 	github.com/orcaman/concurrent-map/v2 v2.0.1
 	github.com/rs/cors v1.10.1
 	github.com/spf13/cobra v1.8.0
-	github.com/wamp3hub/wamp3go v0.4.31
+	github.com/wamp3hub/wamp3go v0.5.0
 )
 
 require (
