@@ -103,7 +103,7 @@ func (router *Router) __register(
 		router.Session,
 		&wamp.PublishFeatures{
 			URI:                "wamp.registration.new",
-			IncludeRoles:       []string{"root"},
+			IncludeRoles:       []string{"router"},
 			ExcludeSubscribers: []string{registration.AuthorID},
 		},
 		registration,
@@ -135,7 +135,7 @@ func (router *Router) unregister(
 			router.Session,
 			&wamp.PublishFeatures{
 				URI:                "wamp.registration.gone",
-				IncludeRoles:       []string{"root"},
+				IncludeRoles:       []string{"router"},
 				ExcludeSubscribers: []string{registration.AuthorID},
 			},
 			registration.URI,
@@ -212,7 +212,7 @@ func (router *Router) __subscribe(
 		router.Session,
 		&wamp.PublishFeatures{
 			URI:                "wamp.subscription.new",
-			IncludeRoles:       []string{"root"},
+			IncludeRoles:       []string{"router"},
 			ExcludeSubscribers: []string{subscription.AuthorID},
 		},
 		subscription,
@@ -242,7 +242,7 @@ func (router *Router) unsubscribe(
 			router.Session,
 			&wamp.PublishFeatures{
 				URI:                "wamp.subscription.gone",
-				IncludeRoles:       []string{"root"},
+				IncludeRoles:       []string{"router"},
 				ExcludeSubscribers: []string{subscription.AuthorID},
 			},
 			subscription.URI,

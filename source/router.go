@@ -35,7 +35,7 @@ func NewRouter(
 ) *Router {
 	peerDetails := wamp.PeerDetails{
 		ID:   ID,
-		Role: "root",
+		Role: "router",
 		Offer: &wampInterview.Offer{
 			RegistrationsLimit: 10,
 			SubscriptionsLimit: 0,
