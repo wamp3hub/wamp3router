@@ -75,6 +75,11 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 	return resourceList
 }
 
+func (urim *URIM[T]) CountByAuthor(ID string) int {
+	registrations := urim.GetByAuthor(ID)
+	return len(registrations)
+}
+
 func (urim *URIM[T]) setByAuthor(ID string, newResourceList ResourceList[T]) error {
 	if len(newResourceList) == 0 {
 		urim.storage.Delete(urim.bucket, ID)

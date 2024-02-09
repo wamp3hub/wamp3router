@@ -11,6 +11,7 @@ import (
 var defaultOffer = wampInterview.Offer{
 	RegistrationsLimit: 10,
 	SubscriptionsLimit: 10,
+	TicketLifeTime:     10080, // minutes (1 weak)
 }
 
 // RENAME
@@ -34,12 +35,15 @@ func (interviewer *Interviewer) Authenticate(
 ) (*wampInterview.Offer, error) {
 	pendingResponse := wamp.Call[wampInterview.Offer](
 		interviewer.session,
-		&wamp.CallFeatures{URI: "wamp.authenticate"},
+		&wamp.CallFeatures{URI: "wamp.authenticate", IncludeRoles: []string{"interviewer"}},
 		resume,
 	)
 	_, offer, e := pendingResponse.Await()
 	if e == nil {
 		interviewer.logger.Info("authentication success", "offer", offer)
+		if offer.TicketLifeTime == 0 {
+			offer.TicketLifeTime = 1
+		}
 		return &offer, nil
 	} else if e.Error() == router.ErrorProcedureNotFound.Error() {
 		interviewer.logger.Warn("please, register `wamp.authenticate`")

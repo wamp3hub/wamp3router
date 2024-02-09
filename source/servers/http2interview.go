@@ -44,7 +44,7 @@ func http2interviewMount(
 			session.ID()+"-"+wampShared.NewID(),
 			resume.Role,
 			offer,
-			time.Hour*24*7, // 1 weak
+			time.Duration(offer.TicketLifeTime) * time.Minute,
 		)
 		ticket, _ := keyRing.JWTSign(claims)
 

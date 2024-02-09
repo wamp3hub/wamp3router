@@ -40,6 +40,7 @@ func http2websocketMount(
 			header.Set("X-WAMP-Role", claims.Role)
 			connection, e := websocketUpgrader.Upgrade(w, r, nil)
 			if e == nil {
+				logger.Info("new peer", "ID", claims.Subject, "role", claims.Role)
 				// serializerCode := query.Get("serializer")
 				transport := wampTransports.WSTransport{
 					Address:    r.RemoteAddr,
@@ -48,14 +49,12 @@ func http2websocketMount(
 				}
 				resumableTransport := wampTransports.MakeResumable(&transport)
 				peerDetails := wamp.PeerDetails{
-					ID:                 claims.Subject,
-					Role:               claims.Role,
-					RegistrationsLimit: claims.Offer.RegistrationsLimit,
-					SubscriptionsLimit: claims.Offer.SubscriptionsLimit,
+					ID:    claims.Subject,
+					Role:  claims.Role,
+					Offer: &claims.Offer,
 				}
 				peer := wamp.SpawnPeer(&peerDetails, resumableTransport, logger)
 				newcomers.Next(peer)
-				logger.Info("new peer", "ID", claims.Subject, "role", claims.Role)
 			} else {
 				logger.Error("during upgrade", "error", e)
 			}

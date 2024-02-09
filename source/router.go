@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampInterview "github.com/wamp3hub/wamp3go/interview"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 	routerShared "github.com/wamp3hub/wamp3router/source/shared"
@@ -33,10 +34,13 @@ func NewRouter(
 	logger *slog.Logger,
 ) *Router {
 	peerDetails := wamp.PeerDetails{
-		ID:                 ID,
-		Role:               "root",
-		RegistrationsLimit: 10,
-		SubscriptionsLimit: 0,
+		ID:   ID,
+		Role: "root",
+		Offer: &wampInterview.Offer{
+			RegistrationsLimit: 10,
+			SubscriptionsLimit: 0,
+			TicketLifeTime:     0,
+		},
 	}
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
 	lPeer := wamp.SpawnPeer(&peerDetails, lTransport, logger)

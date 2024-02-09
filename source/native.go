@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrorProtocol = errors.New("protocol error")
+	ErrorDenied   = errors.New("denied")
 )
 
 func mount[I, O any](
@@ -30,12 +31,25 @@ func mount[I, O any](
 }
 
 func (router *Router) initialize() {
+	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
 	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.__register)
 	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.__unregister)
-	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
+	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.__getSubscriptionList)
 	mount(router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.__subscribe)
 	mount(router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.__unsubscribe)
-	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.__getSubscriptionList)
+}
+
+func (router *Router) __getRegistrationList(
+	payload any,
+	callEvent wamp.CallEvent,
+) (*RegistrationList, error) {
+	source := wamp.Event(callEvent)
+	URIList := router.Dealer.registrations.DumpURIList()
+	for _, uri := range URIList {
+		registrationList := router.Dealer.registrations.Match(uri)
+		source = wamp.Yield(source, registrationList)
+	}
+	return nil, wamp.GeneratorExit(source)
 }
 
 func (router *Router) __register(
@@ -43,6 +57,7 @@ func (router *Router) __register(
 	callEvent wamp.CallEvent,
 ) (*wamp.Registration, error) {
 	if len(payload.URI) == 0 {
+		// TODO validate URI
 		return nil, wamp.ErrorInvalidPayload
 	}
 
@@ -54,10 +69,27 @@ func (router *Router) __register(
 		"AuthorID", route.CallerID,
 	)
 
+	caller, found := router.Dealer.peers.Get(route.CallerID)
+	if !found {
+		router.logger.Error("author not found", logData)
+		return nil, ErrorProtocol
+	}
+
+	usedCount := router.Dealer.registrations.CountByAuthor(caller.Details.ID)
+	if usedCount >= int(caller.Details.Offer.RegistrationsLimit) {
+		router.logger.Error(
+			"register denied (number of registrations exceeded)",
+			"avaiableCount", caller.Details.Offer.RegistrationsLimit,
+			"usedCount", usedCount,
+			logData,
+		)
+		return nil, ErrorDenied
+	}
+
 	registration := wamp.Registration{
 		ID:       wampShared.NewID(),
 		URI:      payload.URI,
-		AuthorID: route.CallerID,
+		AuthorID: caller.Details.ID,
 		Options:  payload.Options,
 	}
 	payload.Options.Route = append(payload.Options.Route, router.ID)
@@ -71,6 +103,7 @@ func (router *Router) __register(
 		router.Session,
 		&wamp.PublishFeatures{
 			URI:                "wamp.registration.new",
+			IncludeRoles:       []string{"root"},
 			ExcludeSubscribers: []string{registration.AuthorID},
 		},
 		registration,
@@ -102,6 +135,7 @@ func (router *Router) unregister(
 			router.Session,
 			&wamp.PublishFeatures{
 				URI:                "wamp.registration.gone",
+				IncludeRoles:       []string{"root"},
 				ExcludeSubscribers: []string{registration.AuthorID},
 			},
 			registration.URI,
@@ -128,19 +162,6 @@ func (router *Router) __unregister(
 	return struct{}{}, nil
 }
 
-func (router *Router) __getRegistrationList(
-	payload any,
-	callEvent wamp.CallEvent,
-) (*RegistrationList, error) {
-	source := wamp.Event(callEvent)
-	URIList := router.Dealer.registrations.DumpURIList()
-	for _, uri := range URIList {
-		registrationList := router.Dealer.registrations.Match(uri)
-		source = wamp.Yield(source, registrationList)
-	}
-	return nil, wamp.GeneratorExit(source)
-}
-
 func (router *Router) __subscribe(
 	payload wamp.NewResourcePayload[wamp.SubscribeOptions],
 	callEvent wamp.CallEvent,
@@ -156,6 +177,23 @@ func (router *Router) __subscribe(
 		"URI", payload.URI,
 		"AuthorID", route.CallerID,
 	)
+
+	caller, found := router.Broker.peers.Get(route.CallerID)
+	if !found {
+		router.logger.Error("author not found", logData)
+		return nil, ErrorProtocol
+	}
+
+	usedCount := router.Broker.subscriptions.CountByAuthor(caller.Details.ID)
+	if usedCount >= int(caller.Details.Offer.SubscriptionsLimit) {
+		router.logger.Error(
+			"subscribe denied (number of subscriptions exceeded)",
+			"availableCount", caller.Details.Offer.SubscriptionsLimit,
+			"usedCount", usedCount,
+			logData,
+		)
+		return nil, ErrorDenied
+	}
 
 	subscription := wamp.Subscription{
 		ID:       wampShared.NewID(),
@@ -174,6 +212,7 @@ func (router *Router) __subscribe(
 		router.Session,
 		&wamp.PublishFeatures{
 			URI:                "wamp.subscription.new",
+			IncludeRoles:       []string{"root"},
 			ExcludeSubscribers: []string{subscription.AuthorID},
 		},
 		subscription,
@@ -203,6 +242,7 @@ func (router *Router) unsubscribe(
 			router.Session,
 			&wamp.PublishFeatures{
 				URI:                "wamp.subscription.gone",
+				IncludeRoles:       []string{"root"},
 				ExcludeSubscribers: []string{subscription.AuthorID},
 			},
 			subscription.URI,
