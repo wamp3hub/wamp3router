@@ -21,7 +21,7 @@ type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
 
 type Dealer struct {
 	routerID      string
-	peers         map[string]*wamp.Peer
+	peers         cmap.ConcurrentMap[string, *wamp.Peer]
 	counter       cmap.ConcurrentMap[string, int]
 	registrations *routerShared.URIM[*wamp.RegisterOptions]
 	logger        *slog.Logger
@@ -34,7 +34,7 @@ func NewDealer(
 ) *Dealer {
 	return &Dealer{
 		routerID,
-		make(map[string]*wamp.Peer),
+		cmap.New[*wamp.Peer](),
 		cmap.New[int](),
 		routerShared.NewURIM[*wamp.RegisterOptions](storage, logger),
 		logger.With("name", "Dealer"),
@@ -125,7 +125,7 @@ func (dealer *Dealer) onCall(
 			"SubscriberID", registration.AuthorID,
 		)
 
-		executor, exists := dealer.peers[registration.AuthorID]
+		executor, exists := dealer.peers.Get(registration.AuthorID)
 		if !exists {
 			dealer.logger.Error("invalid registartion (peer not found)", registrationLogData, requestLogData)
 			continue
@@ -191,13 +191,13 @@ func (dealer *Dealer) onCall(
 }
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
-	delete(dealer.peers, peer.Details.ID)
+	dealer.peers.Remove(peer.Details.ID)
 	dealer.logger.Debug("dettach peer", "ID", peer.Details.ID)
 }
 
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
 	dealer.logger.Debug("attach peer", "ID", peer.Details.ID)
-	dealer.peers[peer.Details.ID] = peer
+	dealer.peers.Set(peer.Details.ID, peer)
 	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
 		func() { dealer.onLeave(peer) },

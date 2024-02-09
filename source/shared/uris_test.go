@@ -10,12 +10,12 @@ import (
 
 func insertResource[T any](root *routerShared.URISegment[T], path routerShared.Path, resourceID string, data T) {
 	segment := root.GetSert(path)
-	segment.Data[resourceID] = data
+	segment.Data.Set(resourceID, data)
 }
 
 func deleteResource[T any](root *routerShared.URISegment[T], path routerShared.Path, resourceID string) {
 	segment := root.GetSert(path)
-	delete(segment.Data, resourceID)
+	segment.Data.Remove(resourceID)
 }
 
 func TestDump(t *testing.T) {
