@@ -2,9 +2,9 @@ package routerShared_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	wampInterview "github.com/wamp3hub/wamp3go/interview"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
@@ -27,12 +27,17 @@ func TestKeyRing(t *testing.T) {
 		t.Fatalf("Invalid behaviour")
 	}
 
-	now := time.Now()
+	expectedRole := "guest"
+	expectedOffer := wampInterview.Offer{
+		RegistrationsLimit: 1,
+		SubscriptionsLimit: 1,
+	}
 	expectedClaims := routerShared.JWTClaims{
-		Issuer:    wampShared.NewID(),
-		Subject:   wampShared.NewID(),
-		ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
-		IssuedAt:  jwt.NewNumericDate(now),
+		jwt.RegisteredClaims{
+			Issuer: wampShared.NewID(),
+		},
+		expectedRole,
+		expectedOffer,
 	}
 	ticket, e := keyRing.JWTSign(&expectedClaims)
 	if e != nil {
@@ -46,6 +51,15 @@ func TestKeyRing(t *testing.T) {
 
 	if claims.Issuer != expectedClaims.Issuer {
 		t.Fatalf("JWTParse expected %v, but got %v", expectedClaims.Issuer, claims.Issuer)
+	}
+
+	if claims.Role != expectedRole {
+		t.Fatalf("JWTParse expected %v, but got %v", claims.Role, expectedRole)
+	}
+
+	if claims.Offer.RegistrationsLimit != expectedOffer.RegistrationsLimit ||
+		claims.Offer.SubscriptionsLimit != expectedOffer.SubscriptionsLimit {
+		t.Fatalf("JWT Offer parse error")
 	}
 
 	_, e = keyRing.JWTParse("invalid-ticket")

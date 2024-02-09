@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	wamp "github.com/wamp3hub/wamp3go"
+	wampInterview "github.com/wamp3hub/wamp3go/interview"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
-	wampInterview "github.com/wamp3hub/wamp3go/transports/interview"
 
+	routerInterview "github.com/wamp3hub/wamp3router/source/interview"
 	routerShared "github.com/wamp3hub/wamp3router/source/shared"
 )
 
@@ -19,43 +19,44 @@ func http2interviewMount(
 	__logger *slog.Logger,
 ) http.Handler {
 	logger := __logger.With("server", "http2interview")
-	authenticator := NewDynamicAuthenticator(session, __logger)
+	interviewer := routerInterview.NewInterviewer(session, __logger)
 
 	onInterview := func(request *http.Request) (int, any) {
 		if request.Method == "OPTIONS" {
 			return 200, nil
 		}
 
-		requestPayload := new(wampInterview.Payload)
-		e := readJSONBody(request.Body, requestPayload)
+		resume := new(wampInterview.Resume[any])
+		e := readJSONBody(request.Body, resume)
 		if e != nil {
 			logger.Error("invalid payload", "error", e)
 			return 400, e
 		}
 
-		e = authenticator.authenticate(session, requestPayload.Credentials)
+		offer, e := interviewer.Authenticate(resume)
 		if e != nil {
-			logger.Error("during authentication", "error", e)
+			logger.Error("during authenticate", "error", e)
 			return 400, e
 		}
 
-		now := time.Now()
-		claims := routerShared.JWTClaims{
-			Issuer:    session.ID(),
-			Subject:   session.ID() + "-" + wampShared.NewID(),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		}
-		ticket, _ := keyRing.JWTSign(&claims)
-		responsePayload := wampInterview.SuccessPayload{
+		claims := routerShared.NewJWTClaims(
+			session.ID(),
+			session.ID()+"-"+wampShared.NewID(),
+			resume.Role,
+			offer,
+			time.Hour*24*7, // 1 weak
+		)
+		ticket, _ := keyRing.JWTSign(claims)
+
+		result := wampInterview.Result{
 			RouterID: claims.Issuer,
 			YourID:   claims.Subject,
 			Ticket:   ticket,
+			Offer:    offer,
 		}
-		return 200, responsePayload
+		return 200, result
 	}
 
-	logger.Info("up...")
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", jsonEndpoint(onInterview))
 	return serveMux

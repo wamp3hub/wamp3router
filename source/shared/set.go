@@ -22,13 +22,17 @@ func (set *Set[T]) Add(k T) {
 	set.values[k] = Emptiness{}
 }
 
+func (set *Set[T]) Size() int {
+	return len(set.values)
+}
+
 func (set *Set[T]) Contains(k T) bool {
 	_, exist := set.values[k]
 	return exist
 }
 
-func (set *Set[T]) Size() int {
-	return len(set.values)
+func (set *Set[T]) Test(k T) bool {
+	return set.Size() > 0 && !set.Contains(k)
 }
 
 func (set *Set[T]) Values() []T {

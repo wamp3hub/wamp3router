@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	SomethingWentWrong = errors.New("SomethingWentWrong")
+	ErrorProtocol = errors.New("protocol error")
 )
 
 func mount[I, O any](
@@ -29,7 +29,7 @@ func mount[I, O any](
 	router.Session.Registrations[registration.ID] = endpoint
 }
 
-func (router *Router) intialize() {
+func (router *Router) initialize() {
 	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.__register)
 	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.__unregister)
 	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
@@ -64,14 +64,14 @@ func (router *Router) __register(
 	e := router.Dealer.registrations.Add(&registration)
 	if e != nil {
 		router.logger.Error("during add registration into URIM", "error", e, logData)
-		return nil, SomethingWentWrong
+		return nil, ErrorProtocol
 	}
 
 	e = wamp.Publish(
 		router.Session,
 		&wamp.PublishFeatures{
-			URI:     "wamp.registration.new",
-			Exclude: []string{registration.AuthorID},
+			URI:                "wamp.registration.new",
+			ExcludeSubscribers: []string{registration.AuthorID},
 		},
 		registration,
 	)
@@ -101,8 +101,8 @@ func (router *Router) unregister(
 		e := wamp.Publish(
 			router.Session,
 			&wamp.PublishFeatures{
-				URI:     "wamp.registration.gone",
-				Exclude: []string{registration.AuthorID},
+				URI:                "wamp.registration.gone",
+				ExcludeSubscribers: []string{registration.AuthorID},
 			},
 			registration.URI,
 		)
@@ -167,14 +167,14 @@ func (router *Router) __subscribe(
 	e := router.Broker.subscriptions.Add(&subscription)
 	if e != nil {
 		router.logger.Error("during add subscription into URIM", "error", e, logData)
-		return nil, SomethingWentWrong
+		return nil, ErrorProtocol
 	}
 
 	e = wamp.Publish(
 		router.Session,
 		&wamp.PublishFeatures{
-			URI:     "wamp.subscription.new",
-			Exclude: []string{subscription.AuthorID},
+			URI:                "wamp.subscription.new",
+			ExcludeSubscribers: []string{subscription.AuthorID},
 		},
 		subscription,
 	)
@@ -202,8 +202,8 @@ func (router *Router) unsubscribe(
 		e := wamp.Publish(
 			router.Session,
 			&wamp.PublishFeatures{
-				URI:     "wamp.subscription.gone",
-				Exclude: []string{subscription.AuthorID},
+				URI:                "wamp.subscription.gone",
+				ExcludeSubscribers: []string{subscription.AuthorID},
 			},
 			subscription.URI,
 		)

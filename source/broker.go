@@ -38,28 +38,27 @@ func (broker *Broker) matchSubscriptions(
 	return subscriptionList
 }
 
-func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) (e error) {
+func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent) {
 	route := request.Route()
-	route.PublisherID = publisher.ID
+	route.PublisherID = publisher.Details.ID
 	route.VisitedRouters = append(route.VisitedRouters, broker.routerID)
 
-	features := request.Features()
+	publishFeatures := request.Features()
 
 	requestLogData := slog.Group(
 		"event",
 		"ID", request.ID,
-		"URI", features.URI,
-		"Include", features.Include,
-		"Exclude", features.Exclude,
-		"PublisherID", publisher.ID,
+		"URI", publishFeatures.URI,
+		"PublisherID", route.PublisherID,
 		"VisitedRouters", route.VisitedRouters,
+		"IncludeSubscribers", publishFeatures.IncludeSubscribers,
+		"ExcludeSubscribers", publishFeatures.ExcludeSubscribers,
+		"IncludeRoles", publishFeatures.IncludeRoles,
+		"ExcludeRoles", publishFeatures.ExcludeRoles,
 	)
 	broker.logger.Debug("publish", requestLogData)
 
-	includeSet := routerShared.NewSet(features.Include)
-	excludeSet := routerShared.NewSet(features.Exclude)
-
-	subscriptionList := broker.matchSubscriptions(features.URI)
+	subscriptionList := broker.matchSubscriptions(publishFeatures.URI)
 
 	for _, subscription := range subscriptionList {
 		subscriptionLogData := slog.Group(
@@ -69,19 +68,20 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 			"SubscriberID", subscription.AuthorID,
 		)
 
-		if excludeSet.Contains(subscription.AuthorID) || (includeSet.Size() > 0 && !includeSet.Contains(subscription.AuthorID)) {
+		subscriber, found := broker.peers[subscription.AuthorID]
+		if !found {
+			broker.logger.Error("subscriber not found (invalid subscription)", subscriptionLogData, requestLogData)
+			continue
+		}
+
+		if !publishFeatures.Authorized(subscriber.Details.ID, subscriber.Details.Role) ||
+			!subscription.Options.Authorized(publisher.Details.Role) {
 			broker.logger.Debug("exclude subscriber", subscriptionLogData, requestLogData)
 			continue
 		}
 
-		subscriber, exist := broker.peers[subscription.AuthorID]
-		if !exist {
-			broker.logger.Error("invalid subscription (peer not found)", subscriptionLogData, requestLogData)
-			continue
-		}
-
 		route.EndpointID = subscription.ID
-		route.SubscriberID = subscriber.ID
+		route.SubscriberID = subscriber.Details.ID
 
 		ok := subscriber.Send(request, wamp.DEFAULT_RESEND_COUNT)
 		if ok {
@@ -90,18 +90,16 @@ func (broker *Broker) onPublish(publisher *wamp.Peer, request wamp.PublishEvent)
 			broker.logger.Error("publication dispatch error", subscriptionLogData, requestLogData)
 		}
 	}
-
-	return nil
 }
 
 func (broker *Broker) onLeave(peer *wamp.Peer) {
-	delete(broker.peers, peer.ID)
-	broker.logger.Debug("dettach peer", "ID", peer.ID)
+	delete(broker.peers, peer.Details.ID)
+	broker.logger.Debug("dettach peer", "ID", peer.Details.ID)
 }
 
 func (broker *Broker) onJoin(peer *wamp.Peer) {
-	broker.logger.Debug("attach peer", "ID", peer.ID)
-	broker.peers[peer.ID] = peer
+	broker.logger.Debug("attach peer", "ID", peer.Details.ID)
+	broker.peers[peer.Details.ID] = peer
 	peer.IncomingPublishEvents.Observe(
 		func(event wamp.PublishEvent) { broker.onPublish(peer, event) },
 		func() { broker.onLeave(peer) },

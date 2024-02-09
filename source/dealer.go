@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"log/slog"
 	"sort"
 	"time"
@@ -10,6 +11,10 @@ import (
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 
 	routerShared "github.com/wamp3hub/wamp3router/source/shared"
+)
+
+var (
+	ErrorProcedureNotFound = errors.New("procedure not found")
 )
 
 type RegistrationList = routerShared.ResourceList[*wamp.RegisterOptions]
@@ -57,7 +62,7 @@ func (dealer *Dealer) matchRegistrations(
 		count, _ := dealer.counter.Get(uri)
 		offset := count % n
 		registrationList = shift(registrationList, offset)
-		dealer.counter.Set(uri, count + 1)
+		dealer.counter.Set(uri, count+1)
 	}
 
 	return registrationList
@@ -72,7 +77,7 @@ func (dealer *Dealer) sendReply(
 
 	logData := slog.Group(
 		"response",
-		"CallerID", caller.ID,
+		"CallerID", caller.Details.ID,
 		"InvocationID", features.InvocationID,
 		"VisitedRouters", features.VisitedRouters,
 	)
@@ -89,11 +94,11 @@ func (dealer *Dealer) onCall(
 	caller *wamp.Peer,
 	callEvent wamp.CallEvent,
 ) error {
-	features := callEvent.Features()
-	timeout := time.Duration(features.Timeout) * time.Second
+	callFeatures := callEvent.Features()
+	timeout := time.Duration(callFeatures.Timeout) * time.Second
 
 	route := callEvent.Route()
-	route.CallerID = caller.ID
+	route.CallerID = caller.Details.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.routerID)
 
 	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
@@ -103,14 +108,14 @@ func (dealer *Dealer) onCall(
 	requestLogData := slog.Group(
 		"event",
 		"ID", callEvent.ID,
-		"URI", features.URI,
-		"CallerID", caller.ID,
-		"Timeout", timeout,
+		"URI", callFeatures.URI,
+		"CallerID", route.CallerID,
 		"VisitedRouters", route.VisitedRouters,
+		"Timeout", timeout,
 	)
 	dealer.logger.Debug("call", requestLogData)
 
-	registrationList := dealer.matchRegistrations(features.URI)
+	registrationList := dealer.matchRegistrations(callFeatures.URI)
 
 	for _, registration := range registrationList {
 		registrationLogData := slog.Group(
@@ -126,8 +131,14 @@ func (dealer *Dealer) onCall(
 			continue
 		}
 
+		if !callFeatures.Authorized(executor.Details.Role) ||
+			!registration.Options.Authorized(caller.Details.Role) {
+			dealer.logger.Debug("exclude registration", registrationLogData, requestLogData)
+			continue
+		}
+
 		route.EndpointID = registration.ID
-		route.ExecutorID = executor.ID
+		route.ExecutorID = executor.Details.ID
 
 		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
 		ok := executor.Send(callEvent, wamp.DEFAULT_RESEND_COUNT)
@@ -135,6 +146,7 @@ func (dealer *Dealer) onCall(
 			dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
 			continue
 		}
+
 		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
 
 		select {
@@ -172,20 +184,20 @@ func (dealer *Dealer) onCall(
 	cancelCancelEventPromise()
 
 	dealer.logger.Debug("procedure not found", requestLogData)
-	response := wamp.NewErrorEvent(callEvent, wamp.ErrorProcedureNotFound)
+	response := wamp.NewErrorEvent(callEvent, ErrorProcedureNotFound)
 	dealer.sendReply(caller, response)
 
 	return nil
 }
 
 func (dealer *Dealer) onLeave(peer *wamp.Peer) {
-	delete(dealer.peers, peer.ID)
-	dealer.logger.Debug("dettach peer", "ID", peer.ID)
+	delete(dealer.peers, peer.Details.ID)
+	dealer.logger.Debug("dettach peer", "ID", peer.Details.ID)
 }
 
 func (dealer *Dealer) onJoin(peer *wamp.Peer) {
-	dealer.logger.Debug("attach peer", "ID", peer.ID)
-	dealer.peers[peer.ID] = peer
+	dealer.logger.Debug("attach peer", "ID", peer.Details.ID)
+	dealer.peers[peer.Details.ID] = peer
 	peer.IncomingCallEvents.Observe(
 		func(event wamp.CallEvent) { dealer.onCall(peer, event) },
 		func() { dealer.onLeave(peer) },
