@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampInterview "github.com/wamp3hub/wamp3go/interview"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 	routerShared "github.com/wamp3hub/wamp3router/source/shared"
@@ -32,9 +33,18 @@ func NewRouter(
 	keyRing *routerShared.KeyRing,
 	logger *slog.Logger,
 ) *Router {
+	peerDetails := wamp.PeerDetails{
+		ID:   ID,
+		Role: "router",
+		Offer: &wampInterview.Offer{
+			RegistrationsLimit: 10,
+			SubscriptionsLimit: 0,
+			TicketLifeTime:     0,
+		},
+	}
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
-	lPeer := wamp.SpawnPeer(ID, lTransport, logger)
-	rPeer := wamp.SpawnPeer(ID, rTransport, logger)
+	lPeer := wamp.SpawnPeer(&peerDetails, lTransport, logger)
+	rPeer := wamp.SpawnPeer(&peerDetails, rTransport, logger)
 	session := wamp.NewSession(rPeer, logger)
 	router := Router{
 		ID,
@@ -50,22 +60,22 @@ func NewRouter(
 
 	router.Newcomers.Observe(
 		func(peer *wamp.Peer) {
-			router.logger.Info("attach peer", "ID", peer.ID)
+			router.logger.Info("attach peer", "ID", peer.Details.ID)
 			peer.RejoinEvents.Observe(
 				func(__ struct{}) {},
 				func() {
-					router.unregister(peer.ID, "")
-					router.unsubscribe(peer.ID, "")
-					router.logger.Info("dettach peer", "ID", peer.ID)
+					router.unregister(peer.Details.ID, "")
+					router.unsubscribe(peer.Details.ID, "")
+					router.logger.Info("dettach peer", "ID", peer.Details.ID)
 				},
 			)
 		},
 		func() {
-			router.logger.Info("down...")
+			router.logger.Warn("down...")
 		},
 	)
 
-	router.intialize()
+	router.initialize()
 	return &router
 }
 
@@ -77,6 +87,6 @@ func (router *Router) Serve() {
 }
 
 func (router *Router) Shutdown() {
-	router.logger.Info("shutting down...")
+	router.logger.Warn("shutting down...")
 	router.Newcomers.Complete()
 }

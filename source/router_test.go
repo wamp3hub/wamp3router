@@ -7,6 +7,7 @@ import (
 	"time"
 
 	wamp "github.com/wamp3hub/wamp3go"
+	wampInterview "github.com/wamp3hub/wamp3go/interview"
 	wampShared "github.com/wamp3hub/wamp3go/shared"
 	wampTransports "github.com/wamp3hub/wamp3go/transports"
 	router "github.com/wamp3hub/wamp3router/source"
@@ -35,8 +36,17 @@ func joinSession(
 	logger := slog.Default()
 	alphaID := wampShared.NewID()
 	lTransport, rTransport := wampTransports.NewDuplexLocalTransport(128)
-	lPeer := wamp.SpawnPeer(alphaID, lTransport, logger)
-	rPeer := wamp.SpawnPeer(alphaID, rTransport, logger)
+	peerDetails := wamp.PeerDetails{
+		ID:   alphaID,
+		Role: "guest",
+		Offer: &wampInterview.Offer{
+			RegistrationsLimit: 100,
+			SubscriptionsLimit: 100,
+			TicketLifeTime:     60 * 24,
+		},
+	}
+	lPeer := wamp.SpawnPeer(&peerDetails, lTransport, logger)
+	rPeer := wamp.SpawnPeer(&peerDetails, rTransport, logger)
 	session := wamp.NewSession(rPeer, logger)
 	newcomers.Next(lPeer)
 	time.Sleep(time.Second)

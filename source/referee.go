@@ -111,8 +111,8 @@ func loopGenerator(
 		"URI", callFeatures.URI,
 		"YieldID", yieldEvent.ID(),
 		"Lifetime", lifetime,
-		"CallerID", caller.ID,
-		"ExecutorID", executor.ID,
+		"CallerID", caller.Details.ID,
+		"ExecutorID", executor.Details.ID,
 	)
 	referee := Referee{generator.ID, routerID, caller, executor, logger, stopEventPromise}
 	referee.next(yieldEvent)

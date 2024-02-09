@@ -52,7 +52,7 @@ func (urim *URIM[T]) Match(uri string) ResourceList[T] {
 	path, e := ParseURI(uri)
 	if e == nil {
 		for _, segment := range urim.root.Match(path) {
-			for _, resource := range segment.Data {
+			for _, resource := range segment.Data.Items() {
 				resourceList = append(resourceList, resource)
 			}
 		}
@@ -73,6 +73,11 @@ func (urim *URIM[T]) GetByAuthor(ID string) ResourceList[T] {
 		urim.logger.Warn("during get from storage", "error", e)
 	}
 	return resourceList
+}
+
+func (urim *URIM[T]) CountByAuthor(ID string) int {
+	registrations := urim.GetByAuthor(ID)
+	return len(registrations)
 }
 
 func (urim *URIM[T]) setByAuthor(ID string, newResourceList ResourceList[T]) error {
@@ -97,7 +102,7 @@ func (urim *URIM[T]) DeleteByAuthor(ID string, resourceID string) ResourceList[T
 		if shouldRemove(resource) {
 			path, _ := ParseURI(resource.URI)
 			segment := urim.root.Get(path)
-			delete(segment.Data, resource.ID)
+			segment.Data.Remove(resourceID)
 			removedResourceList = append(removedResourceList, resource)
 		} else {
 			newResourceList = append(newResourceList, resource)
@@ -120,7 +125,7 @@ func (urim *URIM[T]) Add(resource *wamp.Resource[T]) error {
 		e = urim.setByAuthor(resource.AuthorID, newResourceList)
 		if e == nil {
 			segment := urim.root.GetSert(path)
-			segment.Data[resource.ID] = resource
+			segment.Data.Set(resource.ID, resource)
 		}
 	}
 	return e

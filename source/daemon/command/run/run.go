@@ -75,13 +75,7 @@ func Run(
 		__router,
 		logger,
 	)
-	unixServer := routerServers.NewUnixServer(
-		unixPath,
-		__router,
-		logger,
-	)
 	go http2server.Serve()
-	go unixServer.Serve()
 	go __router.Serve()
 
 	exitSignal := make(chan os.Signal, 1)
@@ -90,7 +84,6 @@ func Run(
 
 	logger.Info("gracefully shutting down...")
 	http2server.Shutdown()
-	unixServer.Shutdown()
 	__router.Shutdown()
 	storage.Destroy()
 	logger.Info("shutdown complete")

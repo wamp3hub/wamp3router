@@ -10,20 +10,20 @@ import (
 
 func insertResource[T any](root *routerShared.URISegment[T], path routerShared.Path, resourceID string, data T) {
 	segment := root.GetSert(path)
-	segment.Data[resourceID] = data
+	segment.Data.Set(resourceID, data)
 }
 
 func deleteResource[T any](root *routerShared.URISegment[T], path routerShared.Path, resourceID string) {
 	segment := root.GetSert(path)
-	delete(segment.Data, resourceID)
+	segment.Data.Remove(resourceID)
 }
 
 func TestDump(t *testing.T) {
-	root := routerShared.NewURISegment[routerShared.Emptiness](nil)
+	root := routerShared.NewURISegment[struct{}](nil)
 
 	temporaryResourcePath := routerShared.Path{"wamp", "test"}
 	temporaryResourceID := wampShared.NewID()
-	insertResource(root, temporaryResourcePath, temporaryResourceID, routerShared.Emptiness{})
+	insertResource(root, temporaryResourcePath, temporaryResourceID, struct{}{})
 	deleteResource(root, temporaryResourcePath, temporaryResourceID)
 
 	expectedPathList := []routerShared.Path{
@@ -32,7 +32,7 @@ func TestDump(t *testing.T) {
 		routerShared.Path{"wamp", "*"},
 	}
 	for _, path := range expectedPathList {
-		insertResource(root, path, wampShared.NewID(), routerShared.Emptiness{})
+		insertResource(root, path, wampShared.NewID(), struct{}{})
 	}
 
 	t.Run("Case: Get particular", func(t *testing.T) {
