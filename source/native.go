@@ -31,26 +31,26 @@ func mount[I, O any](
 }
 
 func (router *Router) initialize() {
-	mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
+	// mount(router, "wamp.router.registration.list", &wamp.RegisterOptions{}, router.__getRegistrationList)
 	mount(router, "wamp.router.register", &wamp.RegisterOptions{}, router.__register)
 	mount(router, "wamp.router.unregister", &wamp.RegisterOptions{}, router.__unregister)
-	mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.__getSubscriptionList)
+	// mount(router, "wamp.router.subscription.list", &wamp.RegisterOptions{}, router.__getSubscriptionList)
 	mount(router, "wamp.router.subscribe", &wamp.RegisterOptions{}, router.__subscribe)
 	mount(router, "wamp.router.unsubscribe", &wamp.RegisterOptions{}, router.__unsubscribe)
 }
 
-func (router *Router) __getRegistrationList(
-	payload any,
-	callEvent wamp.CallEvent,
-) (*RegistrationList, error) {
-	source := wamp.Event(callEvent)
-	URIList := router.Dealer.registrations.DumpURIList()
-	for _, uri := range URIList {
-		registrationList := router.Dealer.registrations.Match(uri)
-		source = wamp.Yield(source, registrationList)
-	}
-	return nil, wamp.GeneratorExit(source)
-}
+// func (router *Router) __getRegistrationList(
+// 	payload any,
+// 	callEvent wamp.CallEvent,
+// ) (*RegistrationList, error) {
+// 	source := wamp.Event(callEvent)
+// 	URIList := router.Dealer.registrations.DumpURIList()
+// 	for _, uri := range URIList {
+// 		registrationList := router.Dealer.registrations.Match(uri)
+// 		source = wamp.Yield(source, registrationList)
+// 	}
+// 	return nil, wamp.GeneratorExit(source)
+// }
 
 func (router *Router) __register(
 	payload wamp.NewResourcePayload[wamp.RegisterOptions],
@@ -269,15 +269,15 @@ func (router *Router) __unsubscribe(
 	return struct{}{}, nil
 }
 
-func (router *Router) __getSubscriptionList(
-	payload any,
-	callEvent wamp.CallEvent,
-) (*SubscriptionList, error) {
-	source := wamp.Event(callEvent)
-	URIList := router.Broker.subscriptions.DumpURIList()
-	for _, uri := range URIList {
-		subscriptionList := router.Broker.subscriptions.Match(uri)
-		source = wamp.Yield(source, subscriptionList)
-	}
-	return nil, wamp.GeneratorExit(source)
-}
+// func (router *Router) __getSubscriptionList(
+// 	payload any,
+// 	callEvent wamp.CallEvent,
+// ) (*SubscriptionList, error) {
+// 	source := wamp.Event(callEvent)
+// 	URIList := router.Broker.subscriptions.DumpURIList()
+// 	for _, uri := range URIList {
+// 		subscriptionList := router.Broker.subscriptions.Match(uri)
+// 		source = wamp.Yield(source, subscriptionList)
+// 	}
+// 	return nil, wamp.GeneratorExit(source)
+// }

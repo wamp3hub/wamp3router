@@ -101,7 +101,7 @@ func (dealer *Dealer) onCall(
 	route.CallerID = caller.Details.ID
 	route.VisitedRouters = append(route.VisitedRouters, dealer.routerID)
 
-	cancelCallEventPromise, cancelCancelEventPromise := caller.PendingCancelEvents.New(
+	cancelEventPromise, cancelCancelEventPromise := caller.PendingReplyEvents.New(
 		callEvent.ID(), timeout,
 	)
 
@@ -125,15 +125,20 @@ func (dealer *Dealer) onCall(
 			"SubscriberID", registration.AuthorID,
 		)
 
-		executor, exists := dealer.peers.Get(registration.AuthorID)
-		if !exists {
-			dealer.logger.Error("invalid registartion (peer not found)", registrationLogData, requestLogData)
+		if caller.Details.ID == registration.AuthorID {
+			// It is forbidden to call yourself
+			continue
+		}
+
+		executor, found := dealer.peers.Get(registration.AuthorID)
+		if !found {
+			dealer.logger.Error("invalid registration (peer not found)", registrationLogData, requestLogData)
 			continue
 		}
 
 		if !callFeatures.Authorized(executor.Details.Role) ||
 			!registration.Options.Authorized(caller.Details.Role) {
-			dealer.logger.Debug("exclude registration", registrationLogData, requestLogData)
+			dealer.logger.Debug("exclude registration (denied)", registrationLogData, requestLogData)
 			continue
 		}
 
@@ -141,6 +146,7 @@ func (dealer *Dealer) onCall(
 		route.ExecutorID = executor.Details.ID
 
 		replyEventPromise, cancelReplyEventPromise := executor.PendingReplyEvents.New(callEvent.ID(), 0)
+
 		ok := executor.Send(callEvent, wamp.DEFAULT_RESEND_COUNT)
 		if !ok {
 			dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
@@ -150,32 +156,24 @@ func (dealer *Dealer) onCall(
 		dealer.logger.Debug("reply event sent", registrationLogData, requestLogData)
 
 		select {
-		case cancelEvent, done := <-cancelCallEventPromise:
+		case cancelEvent, done := <-cancelEventPromise:
 			cancelReplyEventPromise()
 
 			if done {
-				cancelFeatures := cancelEvent.Features()
-				cancelFeatures.VisitedRouters = append(cancelFeatures.VisitedRouters, dealer.routerID)
-				ok := executor.Send(cancelEvent, wamp.DEFAULT_RESEND_COUNT)
-				if ok {
-					dealer.logger.Info("call event cancelled", registrationLogData, requestLogData)
-				} else {
-					dealer.logger.Error("call event dispatch error", registrationLogData, requestLogData)
-				}
+				dealer.logger.Debug("call event cancelled", registrationLogData, requestLogData)
+
+				dealer.sendReply(executor, cancelEvent)
 			} else {
 				dealer.logger.Debug("call event timeout", registrationLogData, requestLogData)
 
 				response := wamp.NewErrorEvent(callEvent, wamp.ErrorTimedOut)
 				dealer.sendReply(caller, response)
+				dealer.sendReply(executor, response)
 			}
 		case response := <-replyEventPromise:
 			cancelCancelEventPromise()
 
-			if response.Kind() == wamp.MK_YIELD {
-				loopGenerator(dealer.routerID, caller, executor, callEvent, response, dealer.logger)
-			} else {
-				dealer.sendReply(caller, response)
-			}
+			dealer.sendReply(caller, response)
 		}
 
 		return nil

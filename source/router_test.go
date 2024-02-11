@@ -188,83 +188,83 @@ func TestRPC(t *testing.T) {
 	})
 }
 
-func TestGenerator(t *testing.T) {
-	nextNewcomer := runRouter()
+// func TestGenerator(t *testing.T) {
+// 	nextNewcomer := runRouter()
 
-	alphaSession := joinSession(nextNewcomer)
+// 	alphaSession := joinSession(nextNewcomer)
 
-	_, e := wamp.Register(
-		alphaSession,
-		"net.example.reverse",
-		&wamp.RegisterOptions{},
-		func(n int, callEvent wamp.CallEvent) (int, error) {
-			source := wamp.Event(callEvent)
-			for i := n; i > -1; i-- {
-				source = wamp.Yield(source, i)
-			}
-			return -1, wamp.GeneratorExit(source)
-		},
-	)
-	if e == nil {
-		t.Log("register success")
-	} else {
-		t.Fatalf("register error %s", e)
-	}
+// 	_, e := wamp.Register(
+// 		alphaSession,
+// 		"net.example.reverse",
+// 		&wamp.RegisterOptions{},
+// 		func(n int, callEvent wamp.CallEvent) (int, error) {
+// 			source := wamp.Event(callEvent)
+// 			for i := n; i > -1; i-- {
+// 				source = wamp.Yield(source, i)
+// 			}
+// 			return -1, wamp.GeneratorExit(source)
+// 		},
+// 	)
+// 	if e == nil {
+// 		t.Log("register success")
+// 	} else {
+// 		t.Fatalf("register error %s", e)
+// 	}
 
-	t.Run("Case: Happy Path", func(t *testing.T) {
-		betaSession := joinSession(nextNewcomer)
+// 	t.Run("Case: Happy Path", func(t *testing.T) {
+// 		betaSession := joinSession(nextNewcomer)
 
-		generator, e := wamp.CallGenerator[int](
-			betaSession,
-			&wamp.CallFeatures{URI: "net.example.reverse"},
-			10,
-		)
-		if e == nil {
-			t.Log("generator success")
-		} else {
-			t.Fatalf("generator error %s", e)
-		}
-		for generator.Active() {
-			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
-			if e == nil {
-				t.Logf("result %d", result)
-			} else if e.Error() == "GeneratorExit" {
-				t.Logf("generator done")
-			} else {
-				t.Fatalf("generator error %s", e)
-			}
-		}
-	})
+// 		generator, e := wamp.CallGenerator[int](
+// 			betaSession,
+// 			&wamp.CallFeatures{URI: "net.example.reverse"},
+// 			10,
+// 		)
+// 		if e == nil {
+// 			t.Log("generator success")
+// 		} else {
+// 			t.Fatalf("generator error %s", e)
+// 		}
+// 		for generator.Active() {
+// 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
+// 			if e == nil {
+// 				t.Logf("result %d", result)
+// 			} else if e.Error() == "GeneratorExit" {
+// 				t.Logf("generator done")
+// 			} else {
+// 				t.Fatalf("generator error %s", e)
+// 			}
+// 		}
+// 	})
 
-	t.Run("Case: Stop", func(t *testing.T) {
-		betaSession := joinSession(nextNewcomer)
+// 	t.Run("Case: Stop", func(t *testing.T) {
+// 		betaSession := joinSession(nextNewcomer)
 
-		generator, e := wamp.CallGenerator[int](
-			betaSession,
-			&wamp.CallFeatures{URI: "net.example.reverse"},
-			100,
-		)
-		if e == nil {
-			t.Log("generator successfully created")
-		} else {
-			t.Fatalf("create generator error %s", e)
-		}
-		for i := 0; i < 10; i++ {
-			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
-			if e == nil {
-				t.Logf("result %d", result)
-			} else if e.Error() == "GeneratorExit" {
-				t.Logf("generator done")
-			} else {
-				t.Fatalf("generator error %s", e)
-			}
-		}
+// 		generator, e := wamp.CallGenerator[int](
+// 			betaSession,
+// 			&wamp.CallFeatures{URI: "net.example.reverse"},
+// 			100,
+// 		)
+// 		if e == nil {
+// 			t.Log("generator successfully created")
+// 		} else {
+// 			t.Fatalf("create generator error %s", e)
+// 		}
+// 		for i := 0; i < 10; i++ {
+// 			_, result, e := generator.Next(wamp.DEFAULT_TIMEOUT)
+// 			if e == nil {
+// 				t.Logf("result %d", result)
+// 			} else if e.Error() == "GeneratorExit" {
+// 				t.Logf("generator done")
+// 			} else {
+// 				t.Fatalf("generator error %s", e)
+// 			}
+// 		}
 
-		e = generator.Stop()
-		if e == nil {
-			t.Log("stop generator success")
-		} else {
-			t.Fatalf("stop generator error %s", e)
-		}
-	})
-}
+// 		e = generator.Stop()
+// 		if e == nil {
+// 			t.Log("stop generator success")
+// 		} else {
+// 			t.Fatalf("stop generator error %s", e)
+// 		}
+// 	})
+// }
